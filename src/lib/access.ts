@@ -1,75 +1,172 @@
-import prisma from "./prisma";
+import prisma from "./prisma"
 
-export async function getUserPlanLimits(userId: string) {
+// ── Plan feature matrix ────────────────────────────────────────────────────────
+
+export type PlanName = "FREE" | "BASIC" | "PRO" | "GLOBAL" | "ADMIN"
+
+export interface PlanLimits {
+  plan: PlanName
+  maxResumes: number
+  maxLanguages: number
+  maxTemplates: number
+  hasWatermark: boolean
+  hasAIAccess: boolean
+  aiCreditsPerMonth: number
+  canExportDocx: boolean
+  canUsePriorityExport: boolean
+  canAccessAllTemplates: boolean
+}
+
+const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
+  FREE: {
+    plan: "FREE",
+    maxResumes: 3,
+    maxLanguages: 1,
+    maxTemplates: 1,
+    hasWatermark: true,
+    hasAIAccess: true,
+    aiCreditsPerMonth: 5,
+    canExportDocx: false,
+    canUsePriorityExport: false,
+    canAccessAllTemplates: false,
+  },
+  BASIC: {
+    plan: "BASIC",
+    maxResumes: 10,
+    maxLanguages: 1,
+    maxTemplates: 3,
+    hasWatermark: false,
+    hasAIAccess: true,
+    aiCreditsPerMonth: 50,
+    canExportDocx: false,
+    canUsePriorityExport: false,
+    canAccessAllTemplates: false,
+  },
+  PRO: {
+    plan: "PRO",
+    maxResumes: 999,
+    maxLanguages: 3,
+    maxTemplates: 8,
+    hasWatermark: false,
+    hasAIAccess: true,
+    aiCreditsPerMonth: 999,
+    canExportDocx: true,
+    canUsePriorityExport: true,
+    canAccessAllTemplates: false,
+  },
+  GLOBAL: {
+    plan: "GLOBAL",
+    maxResumes: 999,
+    maxLanguages: 999,
+    maxTemplates: 999,
+    hasWatermark: false,
+    hasAIAccess: true,
+    aiCreditsPerMonth: 9999,
+    canExportDocx: true,
+    canUsePriorityExport: true,
+    canAccessAllTemplates: true,
+  },
+  ADMIN: {
+    plan: "ADMIN",
+    maxResumes: 999,
+    maxLanguages: 999,
+    maxTemplates: 999,
+    hasWatermark: false,
+    hasAIAccess: true,
+    aiCreditsPerMonth: 9999,
+    canExportDocx: true,
+    canUsePriorityExport: true,
+    canAccessAllTemplates: true,
+  },
+}
+
+// ── Core access functions ──────────────────────────────────────────────────────
+
+export async function getUserPlanLimits(userId: string): Promise<PlanLimits> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: {
-      subscription: {
-        include: { plan: true }
-      }
-    }
-  });
+    select: {
+      role: true,
+      subscription: { include: { plan: true } },
+    },
+  })
 
-  const planName = user?.subscription?.plan?.name || "FREE";
-  
-  if (user?.role === "ADMIN") {
-    return { plan: "ADMIN", maxLanguages: 999, maxTemplates: 999, hasWatermark: false };
-  }
+  if (!user) return PLAN_LIMITS.FREE
+  if (user.role === "ADMIN") return PLAN_LIMITS.ADMIN
 
-  switch (planName) {
-    case "GLOBAL":
-      return { plan: "GLOBAL", maxLanguages: 999, maxTemplates: 999, hasWatermark: false };
-    case "PRO":
-      return { plan: "PRO", maxLanguages: 3, maxTemplates: 8, hasWatermark: false };
-    case "BASIC":
-      return { plan: "BASIC", maxLanguages: 1, maxTemplates: 3, hasWatermark: false };
-    case "FREE":
-    default:
-      return { plan: "FREE", maxLanguages: 1, maxTemplates: 1, hasWatermark: true };
-  }
+  const planName = (user.subscription?.plan?.name as PlanName) ?? "FREE"
+  return PLAN_LIMITS[planName] ?? PLAN_LIMITS.FREE
 }
 
-export async function canAccessTemplate(userId: string, templateId: string) {
-  const limits = await getUserPlanLimits(userId);
-  if (limits.plan === "ADMIN" || limits.plan === "GLOBAL") return true;
+export async function canAccessTemplate(userId: string, templateId: string): Promise<boolean> {
+  const [limits, template] = await Promise.all([
+    getUserPlanLimits(userId),
+    prisma.template.findUnique({ where: { id: templateId } }),
+  ])
 
-  const template = await prisma.template.findUnique({ where: { id: templateId } });
-  if (!template) return false;
-  
-  if (!template.isPremium) return true;
+  if (!template) return false
+  if (!template.isPremium) return true
+  if (limits.canAccessAllTemplates) return true
 
-  // Check manual unlocks
+  // Check individual unlock
   const unlock = await prisma.purchasedTemplate.findUnique({
-    where: { userId_templateId: { userId, templateId } }
-  });
-
-  if (unlock) return true;
-  
-  // Basic/Pro users would rely on manual unlocks if they choose premium templates, 
-  // or we map specific template counts. For simplicity, we just allow Basic/Pro to access
-  // up to their limit in the UI, but strict server check is here.
-  return false;
+    where: { userId_templateId: { userId, templateId } },
+  })
+  return !!unlock
 }
 
-export async function canAccessLanguage(userId: string, languageCode: string) {
-  const limits = await getUserPlanLimits(userId);
-  if (limits.plan === "ADMIN" || limits.plan === "GLOBAL") return true;
+export async function canAccessLanguage(userId: string, languageCode: string): Promise<boolean> {
+  const [limits, language] = await Promise.all([
+    getUserPlanLimits(userId),
+    prisma.language.findUnique({ where: { code: languageCode } }),
+  ])
 
-  const language = await prisma.language.findUnique({ where: { code: languageCode } });
-  if (!language) return false;
+  if (!language) return false
+  if (!language.isPremium) return true
+  if (limits.maxLanguages >= 999) return true
 
-  if (!language.isPremium) return true; // English is free
-
+  // Check individual unlock
   const unlock = await prisma.purchasedLanguage.findUnique({
-    where: {
-      userId_languageId: {
-        userId,
-        languageId: language.id
-      }
+    where: { userId_languageId: { userId, languageId: language.id } },
+  })
+  return !!unlock
+}
+
+export async function getMonthlyAIUsage(userId: string): Promise<number> {
+  const start = new Date()
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+
+  const logs = await prisma.aIUsageLog.findMany({
+    where: { userId, createdAt: { gte: start } },
+    select: { tokens: true },
+  })
+
+  return logs.reduce((sum, l) => sum + l.tokens, 0)
+}
+
+export async function canUseAI(userId: string): Promise<{ allowed: boolean; reason?: string }> {
+  const limits = await getUserPlanLimits(userId)
+
+  if (!limits.hasAIAccess) {
+    return { allowed: false, reason: "Your plan does not include AI access" }
+  }
+
+  // Count requests this month (1 request = 1 credit for simplicity)
+  const start = new Date()
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+
+  const count = await prisma.aIUsageLog.count({
+    where: { userId, createdAt: { gte: start } },
+  })
+
+  if (count >= limits.aiCreditsPerMonth) {
+    return {
+      allowed: false,
+      reason: `You've used all ${limits.aiCreditsPerMonth} AI credits this month. Upgrade to get more.`,
     }
-  });
+  }
 
-  if (unlock) return true;
-
-  return false;
+  return { allowed: true }
 }

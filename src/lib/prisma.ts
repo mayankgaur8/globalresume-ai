@@ -1,14 +1,16 @@
 import { PrismaClient } from "@prisma/client"
-import { Pool } from "pg"
 import { PrismaPg } from "@prisma/adapter-pg"
 
+// @prisma/adapter-pg v7+ takes { connectionString } directly — no Pool needed.
 function createPrismaClient() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-  const adapter = new PrismaPg(pool)
+  const connectionString = process.env.DATABASE_URL
+  if (!connectionString) throw new Error("DATABASE_URL environment variable is not set")
+  const adapter = new PrismaPg({ connectionString })
   return new PrismaClient({ adapter })
 }
 
 declare global {
+  // eslint-disable-next-line no-var
   var prismaGlobal: undefined | ReturnType<typeof createPrismaClient>
 }
 

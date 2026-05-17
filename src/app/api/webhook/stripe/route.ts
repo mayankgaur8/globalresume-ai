@@ -1,80 +1,162 @@
-import { headers } from "next/headers";
-import { NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
-import prisma from "@/lib/prisma";
-import Stripe from "stripe";
+import { headers } from "next/headers"
+import { NextResponse } from "next/server"
+import { stripe, stripeEnabled } from "@/lib/stripe"
+import prisma from "@/lib/prisma"
+import Stripe from "stripe"
 
 export async function POST(req: Request) {
-  const body = await req.text();
-  const signature = (await headers()).get("Stripe-Signature") as string;
+  if (!stripeEnabled || !stripe) {
+    return new NextResponse("Stripe not configured", { status: 503 })
+  }
 
-  let event: Stripe.Event;
+  const body = await req.text()
+  const sig = (await headers()).get("stripe-signature") ?? ""
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? ""
+
+  let event: Stripe.Event
+  try {
+    event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Invalid signature"
+    console.error("[stripe-webhook] signature verification failed:", msg)
+    return new NextResponse(`Webhook Error: ${msg}`, { status: 400 })
+  }
 
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET || ""
-    );
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown error"
-    return new NextResponse(`Webhook Error: ${msg}`, { status: 400 });
+    switch (event.type) {
+      case "checkout.session.completed":
+        await handleCheckoutComplete(event.data.object as Stripe.Checkout.Session)
+        break
+      case "invoice.payment_succeeded":
+        await handleInvoicePaid(event.data.object as Stripe.Invoice)
+        break
+      case "invoice.payment_failed":
+        await handleInvoiceFailed(event.data.object as Stripe.Invoice)
+        break
+      case "customer.subscription.updated":
+        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription)
+        break
+      case "customer.subscription.deleted":
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
+        break
+      default:
+        break
+    }
+  } catch (err) {
+    console.error(`[stripe-webhook] error handling ${event.type}:`, err)
+    return new NextResponse("Internal webhook error", { status: 500 })
   }
 
-  const session = event.data.object as Stripe.Checkout.Session;
+  return new NextResponse(null, { status: 200 })
+}
 
-  if (event.type === "checkout.session.completed") {
-    const subscription = await stripe.subscriptions.retrieve(
-      session.subscription as string
-    ) as unknown as { id: string; status: string; items: { data: Array<{ price: { id: string } }> }; current_period_end: number };
-    
-    const userId = session.client_reference_id;
-    if (!userId) return new NextResponse("No user id", { status: 400 });
+// ── Period end helper ─────────────────────────────────────────────────────────
+// In Stripe API "basil" (v22+), current_period_end moved to SubscriptionItem
 
-    const priceId = subscription.items.data[0].price.id;
+function getPeriodEnd(sub: Stripe.Subscription): Date | null {
+  const ts = sub.items?.data?.[0]?.current_period_end
+  return ts ? new Date(ts * 1000) : null
+}
 
-    // Find Plan ID based on stripePriceId
-    const plan = await prisma.plan.findUnique({
-      where: { stripePriceId: priceId }
-    });
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
-    await prisma.subscription.upsert({
-      where: {
-        userId: userId,
-      },
-      create: {
-        userId: userId,
-        stripeSubId: subscription.id,
-        stripePriceId: priceId,
-        status: subscription.status,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-        planId: plan?.id,
-      },
-      update: {
-        stripeSubId: subscription.id,
-        stripePriceId: priceId,
-        status: subscription.status,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-        planId: plan?.id,
-      },
-    });
+async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
+  if (!stripe) return
+  const userId = session.client_reference_id
+  if (!userId || !session.subscription) return
+
+  const sub = await stripe.subscriptions.retrieve(session.subscription as string)
+  const priceId = sub.items.data[0]?.price.id
+  const plan = await prisma.plan.findFirst({ where: { stripePriceId: priceId } })
+  const periodEnd = getPeriodEnd(sub)
+
+  await prisma.subscription.upsert({
+    where: { userId },
+    create: {
+      userId,
+      stripeSubId: sub.id,
+      stripePriceId: priceId,
+      status: sub.status,
+      currentPeriodEnd: periodEnd,
+      planId: plan?.id,
+    },
+    update: {
+      stripeSubId: sub.id,
+      stripePriceId: priceId,
+      status: sub.status,
+      currentPeriodEnd: periodEnd,
+      planId: plan?.id,
+    },
+  })
+
+  if (session.customer) {
+    await prisma.user.updateMany({
+      where: { id: userId, stripeCustomerId: null },
+      data: { stripeCustomerId: session.customer as string },
+    })
   }
+}
 
-  if (event.type === "invoice.payment_succeeded") {
-    const subscription = await stripe.subscriptions.retrieve(
-      session.subscription as string
-    ) as unknown as { id: string; status: string; current_period_end: number };
+async function handleInvoicePaid(invoice: Stripe.Invoice) {
+  if (!stripe) return
+  // In Stripe "basil" API, subscription is accessed via invoice.parent.subscription_details
+  const subRef = invoice.parent?.subscription_details?.subscription
+  if (!subRef) return
 
-    await prisma.subscription.update({
-      where: {
-        stripeSubId: subscription.id,
-      },
-      data: {
-        status: subscription.status,
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      },
-    });
-  }
+  const subId = typeof subRef === "string" ? subRef : subRef.id
+  const sub = await stripe.subscriptions.retrieve(subId)
+  const priceId = sub.items.data[0]?.price.id
+  const plan = await prisma.plan.findFirst({ where: { stripePriceId: priceId } })
+  const periodEnd = getPeriodEnd(sub)
 
-  return new NextResponse(null, { status: 200 });
+  await prisma.subscription.updateMany({
+    where: { stripeSubId: sub.id },
+    data: {
+      status: "active",
+      currentPeriodEnd: periodEnd,
+      planId: plan?.id,
+    },
+  })
+}
+
+async function handleInvoiceFailed(invoice: Stripe.Invoice) {
+  const subRef = invoice.parent?.subscription_details?.subscription
+  if (!subRef) return
+  const subId = typeof subRef === "string" ? subRef : subRef.id
+
+  await prisma.subscription.updateMany({
+    where: { stripeSubId: subId },
+    data: { status: "past_due" },
+  })
+}
+
+async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
+  const priceId = sub.items.data[0]?.price.id
+  const plan = await prisma.plan.findFirst({ where: { stripePriceId: priceId } })
+  const periodEnd = getPeriodEnd(sub)
+
+  await prisma.subscription.updateMany({
+    where: { stripeSubId: sub.id },
+    data: {
+      status: sub.status,
+      currentPeriodEnd: periodEnd,
+      stripePriceId: priceId,
+      planId: plan?.id,
+    },
+  })
+}
+
+async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
+  const freePlan = await prisma.plan.findUnique({ where: { name: "FREE" } })
+
+  await prisma.subscription.updateMany({
+    where: { stripeSubId: sub.id },
+    data: {
+      status: "canceled",
+      stripeSubId: null,
+      stripePriceId: null,
+      currentPeriodEnd: null,
+      planId: freePlan?.id,
+    },
+  })
 }

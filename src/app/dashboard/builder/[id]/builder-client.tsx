@@ -9,10 +9,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Save, Download, Printer, ArrowLeft, FileText, Briefcase,
   GraduationCap, Code, User, CheckSquare, Loader2,
-  BookOpen, Globe, FolderOpen, Plus, Trash2,
+  BookOpen, Globe, FolderOpen, Plus, Trash2, Sparkles, Target,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { generateSummary, rewriteBullet, optimizeForATS } from "@/actions/ai"
 
 type Section = "contact" | "summary" | "experience" | "education" | "skills" | "projects" | "certifications" | "languages" | "portfolio"
 
@@ -47,6 +48,9 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [dbResumeId, setDbResumeId] = useState<string | null>(resumeId !== "new" ? resumeId : null)
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [atsJobDesc, setAtsJobDesc] = useState("")
+  const [atsResult, setAtsResult] = useState<{ score: number; suggestions: string[] } | null>(null)
+  const [atsLoading, setAtsLoading] = useState(false)
 
   useEffect(() => {
     setIsMounted(true) // eslint-disable-line react-hooks/set-state-in-effect
@@ -250,6 +254,66 @@ export function BuilderClient({ resumeId, userRole }: Props) {
                   <option value="BR">Brazil</option>
                 </select>
               </div>
+              <div className="space-y-2 border-t border-slate-100 pt-4">
+                <Label className="text-xs font-semibold uppercase text-slate-500 flex items-center gap-1">
+                  <Target className="h-3 w-3" />ATS Score
+                </Label>
+                <textarea
+                  className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-transparent px-2 py-1.5 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+                  placeholder="Paste job description..."
+                  value={atsJobDesc}
+                  onChange={(e) => setAtsJobDesc(e.target.value)}
+                />
+                <Button
+                  size="sm"
+                  className="w-full text-xs bg-purple-600 hover:bg-purple-700"
+                  disabled={atsLoading || !atsJobDesc.trim()}
+                  onClick={async () => {
+                    setAtsLoading(true)
+                    setAtsResult(null)
+                    try {
+                      const resumeText = [
+                        `${data.contact.firstName} ${data.contact.lastName}`,
+                        data.summary,
+                        ...data.experience.map((e) => `${e.position} at ${e.company}: ${e.description}`),
+                        ...data.skills.map((s) => s.name),
+                      ].join("\n")
+                      const result = await optimizeForATS(resumeText, atsJobDesc)
+                      setAtsResult(result)
+                    } catch {
+                      setAtsResult({ score: 0, suggestions: ["Analysis failed. Try again."] })
+                    } finally {
+                      setAtsLoading(false)
+                    }
+                  }}
+                >
+                  {atsLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Target className="h-3 w-3 mr-1" />}
+                  Analyze
+                </Button>
+                {atsResult && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">ATS Score</span>
+                      <span className={`text-sm font-bold ${atsResult.score >= 80 ? "text-emerald-600" : atsResult.score >= 60 ? "text-amber-600" : "text-red-600"}`}>
+                        {atsResult.score}/100
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${atsResult.score >= 80 ? "bg-emerald-500" : atsResult.score >= 60 ? "bg-amber-500" : "bg-red-500"}`}
+                        style={{ width: `${atsResult.score}%` }}
+                      />
+                    </div>
+                    <ul className="space-y-1">
+                      {atsResult.suggestions.map((s, i) => (
+                        <li key={i} className="text-xs text-slate-600 flex gap-1.5">
+                          <span className="text-amber-500 shrink-0">•</span>{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
           </ScrollArea>
         </div>
@@ -271,6 +335,37 @@ interface SectionEditorProps {
 }
 
 function SectionEditor({ section, data, updateContact, setData, addExperience, updateExperience, removeExperience }: SectionEditorProps) {
+  const [aiLoading, setAiLoading] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  const handleGenerateSummary = async () => {
+    setAiLoading("summary")
+    setAiError(null)
+    try {
+      const jobTitle = data.experience[0]?.position || "Professional"
+      const experienceText = data.experience.map((e) => `${e.position} at ${e.company}: ${e.description}`).join("\n")
+      const result = await generateSummary(jobTitle, experienceText, data.language)
+      setData({ summary: result })
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI generation failed")
+    } finally {
+      setAiLoading(null)
+    }
+  }
+
+  const handleRewriteBullet = async (expId: string, description: string, position: string) => {
+    setAiLoading(expId)
+    setAiError(null)
+    try {
+      const result = await rewriteBullet(description, position, data.language)
+      updateExperience(expId, { description: result })
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI rewrite failed")
+    } finally {
+      setAiLoading(null)
+    }
+  }
+
   if (section === "contact") {
     return (
       <div className="space-y-4">
@@ -317,7 +412,24 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
   if (section === "summary") {
     return (
       <div className="space-y-3">
-        <Label>Professional Summary</Label>
+        <div className="flex items-center justify-between">
+          <Label>Professional Summary</Label>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleGenerateSummary}
+            disabled={aiLoading === "summary"}
+            className="h-7 text-xs border-purple-200 text-purple-700 hover:bg-purple-50"
+          >
+            {aiLoading === "summary" ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Sparkles className="h-3 w-3 mr-1" />
+            )}
+            Generate with AI
+          </Button>
+        </div>
+        {aiError && <p className="text-xs text-red-500">{aiError}</p>}
         <textarea
           className="flex min-h-[150px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
           value={data.summary}
@@ -363,7 +475,24 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
               Currently working here
             </label>
             <div className="space-y-1.5">
-              <Label>Achievements</Label>
+              <div className="flex items-center justify-between">
+                <Label>Achievements</Label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleRewriteBullet(exp.id, exp.description, exp.position)}
+                  disabled={aiLoading === exp.id || !exp.description.trim()}
+                  className="h-7 text-xs border-purple-200 text-purple-700 hover:bg-purple-50"
+                >
+                  {aiLoading === exp.id ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3 mr-1" />
+                  )}
+                  AI Rewrite
+                </Button>
+              </div>
+              {aiError && aiLoading === null && <p className="text-xs text-red-500">{aiError}</p>}
               <textarea
                 className="flex min-h-[100px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
                 value={exp.description}
