@@ -6,18 +6,21 @@ import {
   ChevronRight, ChevronLeft, Check, Upload, FileText,
   Sparkles, X, Loader2, ArrowUpFromLine, HardDrive,
   User, Briefcase, GraduationCap, Code, AlignLeft,
+  AlertCircle, CheckCircle2, Info, Zap,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/toaster"
+import type { ParsedResume } from "@/lib/resume-parser"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ExperienceLevel = "none" | "lt3" | "3to5" | "5to10" | "gt10"
 type StartMode = "upload" | "scratch"
-type WizardStep = "experience" | "template" | "start" | "upload" | "contact"
+type WizardStep = "experience" | "template" | "start" | "upload" | "parsing" | "review" | "contact"
 
 interface TemplateFilter {
   style: string
@@ -37,6 +40,20 @@ interface ContactInfo {
   linkedin: string
   website: string
 }
+
+type ParseProgress = {
+  stage: "uploading" | "extracting" | "identifying" | "analyzing" | "ready" | "error"
+  pct: number
+  label: string
+}
+
+const PARSE_STAGES: ParseProgress[] = [
+  { stage: "uploading", pct: 15, label: "Uploading file…" },
+  { stage: "extracting", pct: 35, label: "Extracting text…" },
+  { stage: "identifying", pct: 60, label: "Identifying sections…" },
+  { stage: "analyzing", pct: 85, label: "Running ATS analysis…" },
+  { stage: "ready", pct: 100, label: "Ready!" },
+]
 
 // ── Template Data ──────────────────────────────────────────────────────────────
 
@@ -63,8 +80,8 @@ const EXPERIENCE_OPTIONS: { id: ExperienceLevel; label: string; sub: string; ico
   { id: "gt10", label: "10+ Years", sub: "Executive level", icon: "🏆" },
 ]
 
-const OCCUPATIONS = ["Any", "Management", "IT & Software", "Finance", "Healthcare", "Engineering", "Retail", "Creative"]
 const LANGUAGES = ["English", "German", "French", "Japanese", "Chinese", "Spanish", "Portuguese"]
+
 
 // ── Mini Resume SVG Thumbnail ──────────────────────────────────────────────────
 
@@ -190,9 +207,40 @@ function LivePreviewPanel({ contact, templateId }: { contact: Partial<ContactInf
   )
 }
 
+// ── Confidence Badge ───────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ score }: { score: number }) {
+  if (score >= 80) return <Badge className="bg-emerald-100 text-emerald-700 text-xs">High confidence</Badge>
+  if (score >= 50) return <Badge className="bg-amber-100 text-amber-700 text-xs">Medium confidence</Badge>
+  return <Badge className="bg-red-100 text-red-700 text-xs">Low confidence</Badge>
+}
+
+// ── ATS Score Ring ─────────────────────────────────────────────────────────────
+
+function AtsRing({ score }: { score: number }) {
+  const r = 36
+  const circ = 2 * Math.PI * r
+  const dash = (score / 100) * circ
+  const color = score >= 70 ? "#10B981" : score >= 50 ? "#F59E0B" : "#EF4444"
+  return (
+    <svg width="100" height="100" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r={r} fill="none" stroke="#E2E8F0" strokeWidth="8" />
+      <circle
+        cx="50" cy="50" r={r} fill="none"
+        stroke={color} strokeWidth="8"
+        strokeDasharray={`${dash} ${circ}`}
+        strokeLinecap="round"
+        transform="rotate(-90 50 50)"
+      />
+      <text x="50" y="46" textAnchor="middle" className="text-lg font-bold" fontSize="18" fontWeight="700" fill="#0F172A">{score}</text>
+      <text x="50" y="61" textAnchor="middle" fontSize="9" fill="#94A3B8">ATS Score</text>
+    </svg>
+  )
+}
+
 // ── Steps ──────────────────────────────────────────────────────────────────────
 
-const STEPS: { id: WizardStep; label: string; icon: React.ReactNode }[] = [
+const WIZARD_PROGRESS_STEPS = [
   { id: "experience", label: "Experience", icon: <Briefcase className="h-4 w-4" /> },
   { id: "template", label: "Template", icon: <FileText className="h-4 w-4" /> },
   { id: "start", label: "Upload", icon: <Upload className="h-4 w-4" /> },
@@ -211,17 +259,23 @@ export function CreateWizard() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [parseProgress, setParseProgress] = useState<ParseProgress>(PARSE_STAGES[0])
+  const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null)
+  const [parseError, setParseError] = useState<string | null>(null)
+  const [reviewTab, setReviewTab] = useState<"contact" | "experience" | "education" | "skills">("contact")
   const [filters, setFilters] = useState<TemplateFilter>({ style: "Any", columns: "Any", occupation: "Any", language: "English" })
   const [contact, setContact] = useState<ContactInfo>({
     firstName: "", lastName: "", profession: "", city: "", country: "", phone: "", email: "", linkedin: "", website: "",
   })
 
-  const stepIndex = STEPS.findIndex((s) => s.id === step)
+  // Map progress step id to index for the top tracker
+  const progressStepIndex = WIZARD_PROGRESS_STEPS.findIndex((s) =>
+    s.id === step ||
+    (step === "parsing" && s.id === "start") ||
+    (step === "review" && s.id === "start")
+  )
 
   const filteredTemplates = TEMPLATES.filter((t) => {
-    if (experience && !t.recommended.includes(experience)) {
-      // still show all, just mark recommended separately
-    }
     if (filters.style !== "Any" && t.style !== filters.style) return false
     if (filters.columns !== "Any" && t.columns !== filters.columns) return false
     return true
@@ -239,16 +293,71 @@ export function CreateWizard() {
     if (file) setUploadedFile(file)
   }
 
+  const runParse = async (file: File) => {
+    setStep("parsing")
+    setParseError(null)
+
+    // Animate progress stages
+    const stageDelay = 600
+    for (let i = 0; i < PARSE_STAGES.length - 1; i++) {
+      setParseProgress(PARSE_STAGES[i])
+      await new Promise((r) => setTimeout(r, stageDelay))
+    }
+
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch("/api/resume/import", { method: "POST", body: form })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Parse failed")
+
+      const parsed: ParsedResume = json.data
+      setParsedResume(parsed)
+
+      // Auto-fill contact
+      const nameParts = parsed.contact.fullName?.split(" ") || []
+      setContact({
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" ") || "",
+        profession: parsed.contact.jobTitle || "",
+        city: parsed.contact.location?.split(",")[0]?.trim() || "",
+        country: parsed.contact.location?.split(",")[1]?.trim() || "",
+        phone: parsed.contact.phone || "",
+        email: parsed.contact.email || "",
+        linkedin: parsed.contact.linkedin || "",
+        website: parsed.contact.website || "",
+      })
+
+      setParseProgress(PARSE_STAGES[PARSE_STAGES.length - 1])
+      await new Promise((r) => setTimeout(r, 600))
+      setStep("review")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error"
+      setParseError(msg)
+      setParseProgress({ stage: "error", pct: 0, label: "Parsing failed" })
+    }
+  }
+
   const handleFinish = async () => {
     setIsCreating(true)
     try {
+      const experienceSections = parsedResume?.experience.map((e, i) => ({
+        type: "EXPERIENCE",
+        content: e,
+        order: i + 1,
+      })) || []
+
+      const educationSections = parsedResume?.education.map((e, i) => ({
+        type: "EDUCATION",
+        content: e,
+        order: 100 + i,
+      })) || []
+
       const res = await fetch("/api/resumes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: contact.firstName
-            ? `${contact.firstName}'s Resume`
-            : "My Resume",
+          title: contact.firstName ? `${contact.firstName}'s Resume` : "My Resume",
           languageCode: filters.language === "English" ? "en"
             : filters.language === "German" ? "de"
             : filters.language === "French" ? "fr"
@@ -259,17 +368,17 @@ export function CreateWizard() {
           templateId: selectedTemplate,
           targetCountry: "US",
           sections: [
-            {
-              type: "CONTACT",
-              content: contact,
-              order: 0,
-            },
+            { type: "CONTACT", content: contact, order: 0 },
+            ...(parsedResume?.summary ? [{ type: "SUMMARY", content: { text: parsedResume.summary }, order: 1 }] : []),
+            ...experienceSections,
+            ...educationSections,
+            ...(parsedResume?.skills.all.length ? [{ type: "SKILLS", content: { items: parsedResume.skills.all }, order: 200 }] : []),
           ],
         }),
       })
       if (!res.ok) throw new Error("Failed to create resume")
       const created = await res.json()
-      toast("Resume created! Let's fill it in.", "success")
+      toast("Resume created with imported data!", "success")
       router.push(`/dashboard/builder/${created.id}`)
     } catch {
       toast("Failed to create resume. Please try again.", "error")
@@ -283,6 +392,7 @@ export function CreateWizard() {
     if (step === "template") return true
     if (step === "start") return startMode !== null
     if (step === "upload") return uploadedFile !== null
+    if (step === "review") return true
     return true
   }
 
@@ -293,7 +403,8 @@ export function CreateWizard() {
       if (startMode === "upload") setStep("upload")
       else setStep("contact")
     }
-    else if (step === "upload") setStep("contact")
+    else if (step === "upload") runParse(uploadedFile!)
+    else if (step === "review") setStep("contact")
     else if (step === "contact") handleFinish()
   }
 
@@ -301,7 +412,9 @@ export function CreateWizard() {
     if (step === "template") setStep("experience")
     else if (step === "start") setStep("template")
     else if (step === "upload") setStep("start")
-    else if (step === "contact") setStep(startMode === "upload" ? "upload" : "start")
+    else if (step === "parsing") setStep("upload")
+    else if (step === "review") setStep("upload")
+    else if (step === "contact") setStep(startMode === "upload" ? "review" : "start")
   }
 
   return (
@@ -310,11 +423,9 @@ export function CreateWizard() {
       <div className="bg-white border-b border-slate-200 px-6 py-3">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-2">
-            {STEPS.map((s, i) => {
-              const isActive = s.id === step
-              const isDone = i < stepIndex
-              // skip "upload" step in tracker if not upload mode
-              if (s.id === "upload") return null
+            {WIZARD_PROGRESS_STEPS.map((s, i) => {
+              const isActive = s.id === step || (step === "parsing" && s.id === "start") || (step === "review" && s.id === "start")
+              const isDone = i < progressStepIndex
               return (
                 <div key={s.id} className="flex items-center gap-2">
                   <div className={cn(
@@ -324,7 +435,7 @@ export function CreateWizard() {
                     {isDone ? <Check className="h-3.5 w-3.5" /> : s.icon}
                     {s.label}
                   </div>
-                  {i < STEPS.length - 2 && (
+                  {i < WIZARD_PROGRESS_STEPS.length - 1 && (
                     <div className={cn("h-px w-8 transition-colors", isDone ? "bg-emerald-300" : "bg-slate-200")} />
                   )}
                 </div>
@@ -593,7 +704,335 @@ export function CreateWizard() {
             </div>
           )}
 
-          {/* Step 5: Contact info */}
+          {/* Parsing progress */}
+          {step === "parsing" && (
+            <div className="max-w-md mx-auto text-center">
+              <div className="mb-8">
+                {parseProgress.stage === "error" ? (
+                  <div className="h-20 w-20 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle className="h-10 w-10 text-red-500" />
+                  </div>
+                ) : parseProgress.stage === "ready" ? (
+                  <div className="h-20 w-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+                  </div>
+                ) : (
+                  <div className="h-20 w-20 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+                    <Loader2 className="h-10 w-10 text-blue-600 animate-spin" />
+                  </div>
+                )}
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">
+                  {parseProgress.stage === "error" ? "Parsing Failed" : parseProgress.stage === "ready" ? "Done!" : "Analyzing your resume…"}
+                </h1>
+                <p className="text-slate-500 text-sm">{parseProgress.label}</p>
+              </div>
+
+              {parseProgress.stage !== "error" && (
+                <div className="space-y-3 mb-6">
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 rounded-full transition-all duration-700"
+                      style={{ width: `${parseProgress.pct}%` }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    {PARSE_STAGES.map((s) => {
+                      const done = PARSE_STAGES.indexOf(parseProgress) > PARSE_STAGES.indexOf(s) || parseProgress.stage === "ready"
+                      const active = parseProgress.stage === s.stage
+                      return (
+                        <div key={s.stage} className="flex items-center gap-2 text-sm">
+                          {done ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                          ) : active ? (
+                            <Loader2 className="h-4 w-4 text-blue-600 animate-spin shrink-0" />
+                          ) : (
+                            <div className="h-4 w-4 rounded-full border-2 border-slate-200 shrink-0" />
+                          )}
+                          <span className={cn(done ? "text-emerald-600" : active ? "text-blue-700 font-medium" : "text-slate-400")}>
+                            {s.label}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {parseProgress.stage === "error" && parseError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-left space-y-3">
+                  <p className="text-sm text-red-700">{parseError}</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => { setParseError(null); setStep("upload") }} className="text-xs border-red-200 text-red-700">
+                      Try another file
+                    </Button>
+                    <Button size="sm" onClick={() => { setStartMode("scratch"); setStep("contact") }} className="text-xs bg-blue-600 hover:bg-blue-700">
+                      Start from scratch
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Review parsed data */}
+          {step === "review" && parsedResume && (
+            <div>
+              <div className="text-center mb-6">
+                <h1 className="text-2xl lg:text-3xl font-bold text-slate-900">Review your imported resume</h1>
+                <p className="text-slate-500 mt-2">We found the following information. Review and confirm before continuing.</p>
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                {/* Left: tabs */}
+                <div className="xl:col-span-2 space-y-4">
+                  {/* Overall confidence */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                      <Sparkles className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-semibold text-slate-900 text-sm">Import Confidence</p>
+                        <ConfidenceBadge score={parsedResume.confidence.overall} />
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full" style={{ width: `${parsedResume.confidence.overall}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-2xl font-bold text-slate-900 shrink-0">{parsedResume.confidence.overall}%</span>
+                  </div>
+
+                  {/* Tab nav */}
+                  <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                    <div className="flex border-b border-slate-100">
+                      {[
+                        { id: "contact" as const, label: "Contact", icon: <User className="h-3.5 w-3.5" />, conf: parsedResume.confidence.contact },
+                        { id: "experience" as const, label: "Experience", icon: <Briefcase className="h-3.5 w-3.5" />, conf: parsedResume.confidence.experience },
+                        { id: "education" as const, label: "Education", icon: <GraduationCap className="h-3.5 w-3.5" />, conf: parsedResume.confidence.education },
+                        { id: "skills" as const, label: "Skills", icon: <Code className="h-3.5 w-3.5" />, conf: parsedResume.confidence.skills },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setReviewTab(tab.id)}
+                          className={cn(
+                            "flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold transition-colors border-b-2",
+                            reviewTab === tab.id
+                              ? "border-blue-600 text-blue-700 bg-blue-50/50"
+                              : "border-transparent text-slate-500 hover:text-slate-700"
+                          )}
+                        >
+                          {tab.icon}
+                          {tab.label}
+                          <span className={cn("ml-1 text-[10px] font-bold px-1 py-0.5 rounded",
+                            tab.conf >= 70 ? "bg-emerald-100 text-emerald-700"
+                              : tab.conf >= 40 ? "bg-amber-100 text-amber-700"
+                              : "bg-red-100 text-red-700"
+                          )}>{tab.conf}%</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="p-5">
+                      {/* Contact tab */}
+                      {reviewTab === "contact" && (
+                        <div className="space-y-3">
+                          {[
+                            { label: "Full Name", value: parsedResume.contact.fullName },
+                            { label: "Job Title", value: parsedResume.contact.jobTitle },
+                            { label: "Email", value: parsedResume.contact.email },
+                            { label: "Phone", value: parsedResume.contact.phone },
+                            { label: "Location", value: parsedResume.contact.location },
+                            { label: "LinkedIn", value: parsedResume.contact.linkedin },
+                            { label: "GitHub", value: parsedResume.contact.github },
+                            { label: "Website", value: parsedResume.contact.website },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="flex items-start gap-3">
+                              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0 pt-0.5">{label}</span>
+                              {value ? (
+                                <span className="text-sm text-slate-900 flex items-center gap-1.5">
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                  {value}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-slate-400 flex items-center gap-1.5">
+                                  <AlertCircle className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                                  Not found
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Experience tab */}
+                      {reviewTab === "experience" && (
+                        <div className="space-y-4">
+                          {parsedResume.experience.length === 0 ? (
+                            <div className="text-center py-8 text-slate-500">
+                              <Briefcase className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                              <p className="text-sm">No work experience detected</p>
+                              <p className="text-xs text-slate-400 mt-1">You can add it manually in the builder</p>
+                            </div>
+                          ) : parsedResume.experience.map((exp, i) => (
+                            <div key={i} className="border border-slate-100 rounded-xl p-4">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div>
+                                  <p className="font-semibold text-slate-900 text-sm">{exp.title || "Unknown Title"}</p>
+                                  <p className="text-xs text-slate-500">{exp.company || "Unknown Company"}</p>
+                                </div>
+                                {exp.current && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">Current</Badge>}
+                              </div>
+                              {(exp.startDate || exp.endDate) && (
+                                <p className="text-xs text-slate-400 mb-2">{exp.startDate} – {exp.endDate}</p>
+                              )}
+                              {exp.bullets.length > 0 && (
+                                <ul className="space-y-1">
+                                  {exp.bullets.slice(0, 3).map((b, j) => (
+                                    <li key={j} className="text-xs text-slate-600 flex gap-1.5">
+                                      <span className="text-slate-300 shrink-0">•</span>{b}
+                                    </li>
+                                  ))}
+                                  {exp.bullets.length > 3 && <li className="text-xs text-slate-400">+{exp.bullets.length - 3} more…</li>}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Education tab */}
+                      {reviewTab === "education" && (
+                        <div className="space-y-4">
+                          {parsedResume.education.length === 0 ? (
+                            <div className="text-center py-8 text-slate-500">
+                              <GraduationCap className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                              <p className="text-sm">No education detected</p>
+                              <p className="text-xs text-slate-400 mt-1">You can add it manually in the builder</p>
+                            </div>
+                          ) : parsedResume.education.map((edu, i) => (
+                            <div key={i} className="border border-slate-100 rounded-xl p-4">
+                              <p className="font-semibold text-slate-900 text-sm">{edu.institution || "Unknown Institution"}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">{[edu.degree, edu.field].filter(Boolean).join(" in ") || "Unknown Degree"}</p>
+                              {(edu.startDate || edu.endDate) && (
+                                <p className="text-xs text-slate-400 mt-1">{edu.startDate} – {edu.endDate}</p>
+                              )}
+                              {edu.gpa && <p className="text-xs text-slate-500 mt-1">GPA: {edu.gpa}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Skills tab */}
+                      {reviewTab === "skills" && (
+                        <div className="space-y-4">
+                          {parsedResume.skills.all.length === 0 ? (
+                            <div className="text-center py-8 text-slate-500">
+                              <Code className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                              <p className="text-sm">No skills detected</p>
+                              <p className="text-xs text-slate-400 mt-1">You can add them manually in the builder</p>
+                            </div>
+                          ) : (
+                            <>
+                              {parsedResume.skills.technical.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Technical</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {parsedResume.skills.technical.map((s) => (
+                                      <Badge key={s} className="bg-blue-100 text-blue-700 text-xs">{s}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {parsedResume.skills.tools.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Tools & Other</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {parsedResume.skills.tools.map((s) => (
+                                      <Badge key={s} className="bg-slate-100 text-slate-600 text-xs">{s}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {parsedResume.skills.soft.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Soft Skills</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {parsedResume.skills.soft.map((s) => (
+                                      <Badge key={s} className="bg-purple-100 text-purple-700 text-xs">{s}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: ATS panel */}
+                <div className="space-y-4">
+                  {/* ATS score */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                    <h3 className="font-semibold text-slate-900 text-sm mb-4 flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-blue-600" />ATS Analysis
+                    </h3>
+                    <div className="flex justify-center mb-4">
+                      <AtsRing score={parsedResume.ats.score} />
+                    </div>
+                    {parsedResume.ats.missing.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-red-600 mb-1.5 flex items-center gap-1">
+                          <AlertCircle className="h-3.5 w-3.5" />Missing sections
+                        </p>
+                        <ul className="space-y-1">
+                          {parsedResume.ats.missing.map((m) => (
+                            <li key={m} className="text-xs text-slate-600 flex gap-1.5">
+                              <span className="text-red-400">•</span>{m}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {parsedResume.ats.suggestions.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-blue-600 mb-1.5 flex items-center gap-1">
+                          <Info className="h-3.5 w-3.5" />Suggestions
+                        </p>
+                        <ul className="space-y-1.5">
+                          {parsedResume.ats.suggestions.slice(0, 4).map((s) => (
+                            <li key={s} className="text-xs text-slate-600 flex gap-1.5">
+                              <span className="text-blue-400 shrink-0">→</span>{s}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* File info */}
+                  <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 text-xs text-slate-500 space-y-1">
+                    <div className="flex justify-between">
+                      <span>File type</span>
+                      <span className="font-semibold text-slate-700 uppercase">{parsedResume.fileType}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Pages detected</span>
+                      <span className="font-semibold text-slate-700">{parsedResume.pageCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Sections found</span>
+                      <span className="font-semibold text-slate-700">
+                        {[parsedResume.experience.length > 0, parsedResume.education.length > 0, parsedResume.skills.all.length > 0, !!parsedResume.summary].filter(Boolean).length + 1}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Contact info */}
           {step === "contact" && (
             <div>
               <div className="text-center mb-6">
@@ -603,10 +1042,12 @@ export function CreateWizard() {
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 {/* Form */}
                 <div className="lg:col-span-3">
-                  {uploadedFile && (
+                  {uploadedFile && parsedResume && (
                     <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 mb-4">
                       <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                      <span className="text-sm font-medium text-emerald-700">Successfully imported from {uploadedFile.name}</span>
+                      <span className="text-sm font-medium text-emerald-700">
+                        Auto-filled from {uploadedFile.name} · {parsedResume.confidence.overall}% confidence
+                      </span>
                     </div>
                   )}
                   <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
@@ -671,29 +1112,35 @@ export function CreateWizard() {
           )}
 
           {/* Nav buttons */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-200">
-            {stepIndex > 0 ? (
-              <Button variant="outline" onClick={back} className="border-slate-200">
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Back
-              </Button>
-            ) : (
-              <div />
-            )}
-            <Button
-              onClick={next}
-              disabled={!canNext() || isCreating}
-              className="bg-blue-600 hover:bg-blue-700 min-w-[140px]"
-            >
-              {isCreating ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</>
-              ) : step === "contact" ? (
-                <>Continue to Builder <ChevronRight className="h-4 w-4 ml-1" /></>
+          {step !== "parsing" && (
+            <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-200">
+              {step !== "experience" ? (
+                <Button variant="outline" onClick={back} className="border-slate-200">
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Back
+                </Button>
               ) : (
-                <>Next <ChevronRight className="h-4 w-4 ml-1" /></>
+                <div />
               )}
-            </Button>
-          </div>
+              <Button
+                onClick={next}
+                disabled={!canNext() || isCreating}
+                className="bg-blue-600 hover:bg-blue-700 min-w-[140px]"
+              >
+                {isCreating ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</>
+                ) : step === "upload" ? (
+                  <>Import Resume <ChevronRight className="h-4 w-4 ml-1" /></>
+                ) : step === "review" ? (
+                  <>Looks Good <ChevronRight className="h-4 w-4 ml-1" /></>
+                ) : step === "contact" ? (
+                  <>Continue to Builder <ChevronRight className="h-4 w-4 ml-1" /></>
+                ) : (
+                  <>Next <ChevronRight className="h-4 w-4 ml-1" /></>
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
