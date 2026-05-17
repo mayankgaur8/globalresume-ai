@@ -7,7 +7,7 @@ import {
   Sparkles, X, Loader2, HardDrive,
   User, Briefcase, GraduationCap, AlignLeft,
   AlertCircle, CheckCircle2, Info, Zap, Code,
-  ClipboardPaste, RotateCcw,
+  ClipboardPaste, RotateCcw, ChevronDown, ChevronUp, Copy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,13 +15,15 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/toaster"
-import type { ParsedResume } from "@/lib/resume-parser"
+import type { ParsedResume, ATSBreakdown, AISuggestion } from "@/lib/resume-parser"
+import type { ParsedContact } from "@/lib/resume-parser"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ExperienceLevel = "none" | "lt3" | "3to5" | "5to10" | "gt10"
 type WizardStep = "experience" | "template" | "upload" | "parsing" | "review" | "contact"
 type UploadMode = "file" | "paste"
+type ReviewTab = "contact" | "summary" | "experience" | "education" | "skills" | "aicoach"
 
 interface TemplateFilter { style: string; columns: string; language: string }
 
@@ -59,6 +61,32 @@ const TEMPLATES = [
   { id: "portuguese",   name: "Portuguese CV",          style: "Contemporary", columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL" },
   { id: "global",       name: "Global Professional",    style: "Contemporary", columns: "1", recommended: ["5to10", "gt10"],            plan: "PRO"    },
 ]
+
+// ATS safety tiers per template
+const TEMPLATE_ATS_SAFETY: Record<string, "safe" | "friendly" | "not-safe"> = {
+  minimal:       "safe",
+  "ats-friendly": "safe",
+  classic:       "safe",
+  modern:        "friendly",
+  executive:     "friendly",
+  global:        "friendly",
+  french:        "friendly",
+  portuguese:    "friendly",
+  spanish:       "friendly",
+  japanese:      "friendly",
+  german:        "friendly",
+  creative:      "not-safe",
+}
+
+const TEMPLATE_COUNTRY: Record<string, string> = {
+  german:     "DE/AT/CH",
+  french:     "FR/BE",
+  japanese:   "JP",
+  spanish:    "ES/LATAM",
+  portuguese: "PT/BR",
+}
+
+const PHOTO_TEMPLATES = new Set(["german", "french", "japanese", "creative"])
 
 const EXPERIENCE_OPTIONS = [
   { id: "none"  as ExperienceLevel, label: "No Experience",    sub: "Student or fresh graduate", icon: "🎓" },
@@ -169,20 +197,196 @@ function ConfBadge({ score }: { score: number }) {
   return <Badge className="bg-red-100 text-red-700 text-[10px] font-semibold">Low</Badge>
 }
 
-// ── ATS Ring ──────────────────────────────────────────────────────────────────
+// ── ATS Ring (grade + total score) ────────────────────────────────────────────
 
-function AtsRing({ score }: { score: number }) {
+function AtsRing({ total, grade }: { total: number; grade: string }) {
   const r = 36; const circ = 2 * Math.PI * r
-  const color = score >= 70 ? "#10B981" : score >= 50 ? "#F59E0B" : "#EF4444"
+  const color = total >= 70 ? "#10B981" : total >= 50 ? "#F59E0B" : "#EF4444"
   return (
     <svg width="100" height="100" viewBox="0 0 100 100">
       <circle cx="50" cy="50" r={r} fill="none" stroke="#E2E8F0" strokeWidth="8" />
       <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8"
-        strokeDasharray={`${(score / 100) * circ} ${circ}`}
+        strokeDasharray={`${(total / 100) * circ} ${circ}`}
         strokeLinecap="round" transform="rotate(-90 50 50)" />
-      <text x="50" y="46" textAnchor="middle" fontSize="18" fontWeight="700" fill="#0F172A">{score}</text>
-      <text x="50" y="61" textAnchor="middle" fontSize="9" fill="#94A3B8">ATS Score</text>
+      <text x="50" y="44" textAnchor="middle" fontSize="18" fontWeight="700" fill="#0F172A">{grade}</text>
+      <text x="50" y="58" textAnchor="middle" fontSize="10" fill="#64748B">{total}/100</text>
+      <text x="50" y="70" textAnchor="middle" fontSize="8" fill="#94A3B8">ATS Score</text>
     </svg>
+  )
+}
+
+// ── ATS Breakdown Panel ───────────────────────────────────────────────────────
+
+function AtsBreakdownPanel({ ats }: { ats: ATSBreakdown }) {
+  const sectionOrder = [
+    "contact", "summary", "experience", "achievements",
+    "skills", "education", "keywords", "formatting",
+  ] as const
+
+  const safetyColors = {
+    high:   "bg-emerald-100 text-emerald-700",
+    medium: "bg-amber-100 text-amber-700",
+    low:    "bg-red-100 text-red-700",
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+      <h3 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+        <Zap className="h-4 w-4 text-blue-600" />ATS Analysis
+      </h3>
+
+      {/* Ring + grade */}
+      <div className="flex flex-col items-center gap-2">
+        <AtsRing total={ats.total} grade={ats.grade} />
+        <div className="flex items-center gap-2">
+          <Badge className={cn("text-[10px] font-semibold", safetyColors[ats.safetyLevel])}>
+            {ats.safetyLevel === "high" ? "High Safety" : ats.safetyLevel === "medium" ? "Medium Safety" : "Low Safety"}
+          </Badge>
+          {ats.jobMatchMode && (
+            <Badge className="bg-blue-100 text-blue-700 text-[10px] font-semibold">Job Match</Badge>
+          )}
+        </div>
+      </div>
+
+      {/* Confidence note */}
+      {ats.confidenceNote && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex gap-2">
+          <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-800">{ats.confidenceNote}</p>
+        </div>
+      )}
+
+      {/* Section breakdown */}
+      <div className="space-y-2">
+        {sectionOrder.map((key) => {
+          const sec = ats.sections[key]
+          if (!sec) return null
+          const barColor = sec.pct >= 70 ? "bg-emerald-500" : sec.pct >= 40 ? "bg-amber-500" : "bg-red-500"
+          return (
+            <div key={key}>
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[11px] text-slate-600 font-medium">{sec.label}</span>
+                <span className="text-[11px] text-slate-500 font-semibold">{sec.score}/{sec.maxScore}</span>
+              </div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: `${sec.pct}%` }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Missing */}
+      {ats.missing.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-red-600 mb-1.5 flex items-center gap-1">
+            <AlertCircle className="h-3.5 w-3.5" />Missing
+          </p>
+          <ul className="space-y-1">
+            {ats.missing.map((m) => (
+              <li key={m} className="text-xs text-slate-600 flex gap-1.5"><span className="text-red-400">•</span>{m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── AI Coach Tab ──────────────────────────────────────────────────────────────
+
+function AiCoachTab({ suggestions: initialSuggestions }: { suggestions: AISuggestion[] }) {
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>(initialSuggestions)
+  const { toast } = useToast()
+
+  const dismiss = (id: string) => setSuggestions((prev) => prev.filter((s) => s.id !== id))
+
+  const priorityColors: Record<string, string> = {
+    high:   "bg-red-100 text-red-700",
+    medium: "bg-amber-100 text-amber-700",
+    low:    "bg-slate-100 text-slate-600",
+  }
+
+  if (suggestions.length === 0) {
+    return (
+      <div className="text-center py-10">
+        <CheckCircle2 className="h-10 w-10 mx-auto mb-2 text-emerald-500" />
+        <p className="text-sm font-semibold text-slate-900">All suggestions addressed!</p>
+        <p className="text-xs text-slate-500 mt-1">Your resume looks great.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {suggestions.map((s) => (
+        <div key={s.id} className="border border-slate-100 rounded-xl p-4 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge className={cn("text-[10px] font-bold capitalize", priorityColors[s.priority])}>
+                {s.priority}
+              </Badge>
+              <Badge className="bg-slate-100 text-slate-500 text-[10px]">{s.section}</Badge>
+            </div>
+            <button
+              onClick={() => dismiss(s.id)}
+              className="text-slate-300 hover:text-slate-500 shrink-0"
+              title="Dismiss"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="font-semibold text-sm text-slate-900">{s.title}</p>
+          <p className="text-xs text-slate-600">{s.reason}</p>
+          <p className="text-xs text-slate-700 font-medium">{s.fix}</p>
+          {s.exampleText && (
+            <div className="relative mt-1">
+              <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-3 whitespace-pre-wrap font-mono text-slate-700 leading-relaxed">
+                {s.exampleText}
+              </pre>
+              <button
+                onClick={() => {
+                  void navigator.clipboard.writeText(s.exampleText ?? "")
+                  toast("Copied to clipboard", "success")
+                }}
+                className="absolute top-2 right-2 p-1 rounded bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300"
+                title="Copy example"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Template Badge helpers ────────────────────────────────────────────────────
+
+function TemplateBadges({ templateId }: { templateId: string }) {
+  const safety = TEMPLATE_ATS_SAFETY[templateId]
+  const country = TEMPLATE_COUNTRY[templateId]
+  const hasPhoto = PHOTO_TEMPLATES.has(templateId)
+
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {safety === "safe" && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">ATS Safe</span>
+      )}
+      {safety === "friendly" && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">ATS Friendly</span>
+      )}
+      {safety === "not-safe" && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Not ATS Safe</span>
+      )}
+      {country && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{country}</span>
+      )}
+      {hasPhoto && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">Photo</span>
+      )}
+    </div>
   )
 }
 
@@ -212,13 +416,19 @@ export function CreateWizard() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [pasteText, setPasteText] = useState("")
+  const [jobDescription, setJobDescription] = useState("")
+  const [showJdInput, setShowJdInput] = useState(false)
   const [parseProgress, setParseProgress] = useState<ParseProgress>(PARSE_STAGES[0])
   const [parsedResume, setParsedResume] = useState<ParsedResume | null>(null)
   const [parseError, setParseError] = useState<{ message: string; errorCode?: string; details?: string } | null>(null)
-  const [reviewTab, setReviewTab] = useState<"contact" | "experience" | "education" | "skills">("contact")
+  const [reviewTab, setReviewTab] = useState<ReviewTab>("contact")
   const [isCreating, setIsCreating] = useState(false)
 
-  // Contact form
+  // Editable parsed fields
+  const [editedContact, setEditedContact] = useState<ParsedContact>({})
+  const [editedSummary, setEditedSummary] = useState("")
+
+  // Contact form (contact step)
   const [contact, setContact] = useState<ContactInfo>({
     firstName: "", lastName: "", profession: "",
     city: "", country: "", phone: "", email: "", linkedin: "", website: "",
@@ -255,7 +465,6 @@ export function CreateWizard() {
     setStep("parsing")
     setParseError(null)
 
-    // Animate stages while fetch runs
     let stageIdx = 0
     const advance = () => {
       if (stageIdx < PARSE_STAGES.length - 2) {
@@ -271,12 +480,13 @@ export function CreateWizard() {
       if ("file" in source) {
         const form = new FormData()
         form.append("file", source.file)
+        if (jobDescription.trim()) form.append("jobDescription", jobDescription.trim())
         res = await fetch("/api/resume/import", { method: "POST", body: form })
       } else {
         res = await fetch("/api/resume/import", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: source.text }),
+          body: JSON.stringify({ text: source.text, jobDescription: jobDescription.trim() || undefined }),
         })
       }
 
@@ -295,7 +505,6 @@ export function CreateWizard() {
 
       const parsed: ParsedResume = json.parsedData
 
-      // Detect scanned/empty PDF
       if (!parsed.rawText.trim() || parsed.warning === "scanned") {
         setParseError({
           message: "Could not extract text from this file. It may be a scanned or image-based PDF.",
@@ -306,8 +515,10 @@ export function CreateWizard() {
       }
 
       setParsedResume(parsed)
+      setEditedContact(parsed.contact)
+      setEditedSummary(parsed.summary)
 
-      // Auto-fill contact form from parsed data
+      // Auto-fill contact form
       const nameParts = (parsed.contact.fullName ?? "").trim().split(/\s+/)
       setContact({
         firstName: nameParts[0] ?? "",
@@ -332,6 +543,26 @@ export function CreateWizard() {
     }
   }
 
+  // ── Sync edited contact → contact form when transitioning to contact step ──
+
+  const transitionToContact = () => {
+    if (parsedResume) {
+      const nameParts = (editedContact.fullName ?? "").trim().split(/\s+/)
+      setContact({
+        firstName: nameParts[0] ?? "",
+        lastName: nameParts.slice(1).join(" "),
+        profession: editedContact.jobTitle ?? "",
+        city: (editedContact.location ?? "").split(",")[0]?.trim() ?? "",
+        country: (editedContact.location ?? "").split(",").slice(1).join(",").trim(),
+        phone: editedContact.phone ?? "",
+        email: editedContact.email ?? "",
+        linkedin: editedContact.linkedin ?? "",
+        website: editedContact.website ?? "",
+      })
+    }
+    setStep("contact")
+  }
+
   // ── Create resume + go to builder ─────────────────────────────────────────
 
   const handleFinish = async () => {
@@ -345,7 +576,8 @@ export function CreateWizard() {
         : "en"
 
       const sections: object[] = [{ type: "CONTACT", content: contact, order: 0 }]
-      if (parsedResume?.summary) sections.push({ type: "SUMMARY", content: { text: parsedResume.summary }, order: 1 })
+      const summaryText = parsedResume ? editedSummary : ""
+      if (summaryText) sections.push({ type: "SUMMARY", content: { text: summaryText }, order: 1 })
       parsedResume?.experience.forEach((e, i) => sections.push({ type: "EXPERIENCE", content: e, order: 10 + i }))
       parsedResume?.education.forEach((e, i) => sections.push({ type: "EDUCATION", content: e, order: 50 + i }))
       if (parsedResume?.skills.all.length) sections.push({ type: "SKILLS", content: { items: parsedResume.skills.all }, order: 100 })
@@ -391,7 +623,7 @@ export function CreateWizard() {
       if (uploadMode === "file" && uploadedFile) runParse({ file: uploadedFile })
       else if (uploadMode === "paste" && pasteText.trim()) runParse({ text: pasteText })
     }
-    else if (step === "review") setStep("contact")
+    else if (step === "review") transitionToContact()
     else if (step === "contact") handleFinish()
   }
 
@@ -413,6 +645,8 @@ export function CreateWizard() {
   const skipToManual = () => {
     setParsedResume(null)
     setParseError(null)
+    setEditedContact({})
+    setEditedSummary("")
     setContact({ firstName: "", lastName: "", profession: "", city: "", country: "", phone: "", email: "", linkedin: "", website: "" })
     setStep("contact")
   }
@@ -555,6 +789,7 @@ export function CreateWizard() {
                       <div className="p-2.5 bg-white">
                         <p className={cn("text-xs font-semibold truncate", isSelected ? "text-blue-700" : "text-slate-800")}>{t.name}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">{t.style} · {t.columns} col</p>
+                        <TemplateBadges templateId={t.id} />
                       </div>
                     </button>
                   )
@@ -669,6 +904,31 @@ export function CreateWizard() {
                   <p className="text-xs text-slate-400 mt-1.5">{pasteText.length} characters · minimum 50 to analyze</p>
                 </div>
               )}
+
+              {/* Job description collapsible */}
+              <div className="max-w-xl mx-auto mt-4">
+                <button
+                  onClick={() => setShowJdInput((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-600 hover:border-slate-300 transition-all"
+                >
+                  <span className="font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-slate-400" />
+                    Paste job description <span className="text-slate-400 font-normal">(optional)</span>
+                  </span>
+                  {showJdInput ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                </button>
+                {showJdInput && (
+                  <div className="mt-2">
+                    <textarea
+                      value={jobDescription}
+                      onChange={(e) => setJobDescription(e.target.value)}
+                      placeholder="Paste the job description here for a tailored ATS keyword match score…"
+                      className="w-full h-36 px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-slate-400 mt-1">Adding a job description enables a precise keyword match score in your ATS report.</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -770,7 +1030,7 @@ export function CreateWizard() {
             <div>
               <div className="text-center mb-6">
                 <h1 className="text-2xl lg:text-3xl font-bold text-slate-900">Review extracted data</h1>
-                <p className="text-slate-500 mt-2">Check what we found. You can edit everything in the builder.</p>
+                <p className="text-slate-500 mt-2">Edit any field inline — changes carry through to your resume.</p>
               </div>
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 {/* Main tabs */}
@@ -795,59 +1055,99 @@ export function CreateWizard() {
 
                   {/* Tabs */}
                   <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                    <div className="flex border-b border-slate-100">
+                    <div className="flex border-b border-slate-100 overflow-x-auto">
                       {[
-                        { id: "contact"    as const, label: "Contact",    icon: <User className="h-3.5 w-3.5" />,         conf: parsedResume.confidence.contact    },
-                        { id: "experience" as const, label: "Experience", icon: <Briefcase className="h-3.5 w-3.5" />,    conf: parsedResume.confidence.experience },
-                        { id: "education"  as const, label: "Education",  icon: <GraduationCap className="h-3.5 w-3.5" />,conf: parsedResume.confidence.education  },
-                        { id: "skills"     as const, label: "Skills",     icon: <Code className="h-3.5 w-3.5" />,         conf: parsedResume.confidence.skills     },
+                        { id: "contact"    as ReviewTab, label: "Contact",    icon: <User className="h-3.5 w-3.5" />,         conf: parsedResume.confidence.contact    },
+                        { id: "summary"    as ReviewTab, label: "Summary",    icon: <AlignLeft className="h-3.5 w-3.5" />,    conf: null                               },
+                        { id: "experience" as ReviewTab, label: "Experience", icon: <Briefcase className="h-3.5 w-3.5" />,    conf: parsedResume.confidence.experience },
+                        { id: "education"  as ReviewTab, label: "Education",  icon: <GraduationCap className="h-3.5 w-3.5" />,conf: parsedResume.confidence.education  },
+                        { id: "skills"     as ReviewTab, label: "Skills",     icon: <Code className="h-3.5 w-3.5" />,         conf: parsedResume.confidence.skills     },
+                        { id: "aicoach"    as ReviewTab, label: "AI Coach",   icon: <Sparkles className="h-3.5 w-3.5" />,     conf: null                               },
                       ].map((tab) => (
                         <button key={tab.id} onClick={() => setReviewTab(tab.id)}
                           className={cn(
-                            "flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold transition-colors border-b-2",
+                            "flex-1 min-w-fit flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-semibold transition-colors border-b-2 whitespace-nowrap",
                             reviewTab === tab.id
                               ? "border-blue-600 text-blue-700 bg-blue-50/50"
                               : "border-transparent text-slate-500 hover:text-slate-700"
                           )}>
                           {tab.icon}{tab.label}
-                          <span className={cn("ml-1 text-[10px] font-bold px-1 py-0.5 rounded",
-                            tab.conf >= 70 ? "bg-emerald-100 text-emerald-700"
-                              : tab.conf >= 40 ? "bg-amber-100 text-amber-700"
-                              : "bg-red-100 text-red-700")}>
-                            {tab.conf}%
-                          </span>
+                          {tab.conf !== null && (
+                            <span className={cn("ml-1 text-[10px] font-bold px-1 py-0.5 rounded",
+                              tab.conf >= 70 ? "bg-emerald-100 text-emerald-700"
+                                : tab.conf >= 40 ? "bg-amber-100 text-amber-700"
+                                : "bg-red-100 text-red-700")}>
+                              {tab.conf}%
+                            </span>
+                          )}
+                          {tab.id === "aicoach" && parsedResume.ats.suggestions.length > 0 && (
+                            <span className="ml-1 text-[10px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-700">
+                              {parsedResume.ats.suggestions.length}
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
                     <div className="p-5">
-                      {/* Contact */}
+
+                      {/* Contact — editable */}
                       {reviewTab === "contact" && (
                         <div className="space-y-3">
-                          {[
-                            { label: "Full Name",  value: parsedResume.contact.fullName  },
-                            { label: "Job Title",  value: parsedResume.contact.jobTitle  },
-                            { label: "Email",      value: parsedResume.contact.email     },
-                            { label: "Phone",      value: parsedResume.contact.phone     },
-                            { label: "Location",   value: parsedResume.contact.location  },
-                            { label: "LinkedIn",   value: parsedResume.contact.linkedin  },
-                            { label: "GitHub",     value: parsedResume.contact.github    },
-                            { label: "Website",    value: parsedResume.contact.website   },
-                          ].map(({ label, value }) => (
-                            <div key={label} className="flex items-start gap-3">
-                              <span className="text-xs font-semibold text-slate-400 w-20 shrink-0 pt-0.5">{label}</span>
-                              {value ? (
-                                <span className="text-sm text-slate-900 flex items-center gap-1.5">
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />{value}
-                                </span>
-                              ) : (
-                                <span className="text-sm text-slate-400 flex items-center gap-1.5 italic">
-                                  <AlertCircle className="h-3.5 w-3.5 text-slate-300 shrink-0" />Not found
-                                </span>
-                              )}
+                          <p className="text-xs text-slate-400 mb-2 flex items-center gap-1">
+                            <Info className="h-3 w-3" />Edit fields directly — changes will auto-fill the contact form.
+                          </p>
+                          {(
+                            [
+                              { label: "Full Name",  key: "fullName"  as keyof ParsedContact, conf: parsedResume.confidence.contact },
+                              { label: "Job Title",  key: "jobTitle"  as keyof ParsedContact, conf: parsedResume.confidence.contact },
+                              { label: "Email",      key: "email"     as keyof ParsedContact, conf: parsedResume.confidence.contact },
+                              { label: "Phone",      key: "phone"     as keyof ParsedContact, conf: parsedResume.confidence.contact },
+                              { label: "Location",   key: "location"  as keyof ParsedContact, conf: parsedResume.confidence.contact },
+                              { label: "LinkedIn",   key: "linkedin"  as keyof ParsedContact, conf: 0 },
+                              { label: "GitHub",     key: "github"    as keyof ParsedContact, conf: 0 },
+                              { label: "Website",    key: "website"   as keyof ParsedContact, conf: 0 },
+                            ] as { label: string; key: keyof ParsedContact; conf: number }[]
+                          ).map(({ label, key, conf }) => (
+                            <div key={label} className="flex items-center gap-3">
+                              <div className="flex items-center gap-1.5 w-24 shrink-0">
+                                <span className="text-xs font-semibold text-slate-400">{label}</span>
+                              </div>
+                              <div className="flex-1 relative">
+                                <Input
+                                  value={(editedContact[key] as string | undefined) ?? ""}
+                                  onChange={(e) => setEditedContact((prev) => ({ ...prev, [key]: e.target.value || undefined }))}
+                                  placeholder={`Not detected`}
+                                  className="h-8 text-xs border-slate-200 pr-16"
+                                />
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                  {editedContact[key] ? (
+                                    <ConfBadge score={conf} />
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300 italic">empty</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
                       )}
+
+                      {/* Summary — editable */}
+                      {reviewTab === "summary" && (
+                        <div className="space-y-3">
+                          <p className="text-xs text-slate-400 flex items-center gap-1">
+                            <Info className="h-3 w-3" />Edit or write your professional summary here.
+                          </p>
+                          <textarea
+                            value={editedSummary}
+                            onChange={(e) => setEditedSummary(e.target.value)}
+                            placeholder="Write a 2–3 sentence professional summary…&#10;&#10;Example: Results-driven Software Engineer with 5+ years building scalable web applications. Expert in React, Node.js, and AWS."
+                            className="w-full h-48 px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <p className="text-xs text-slate-400">{editedSummary.trim().split(/\s+/).filter(Boolean).length} words · aim for 30–80</p>
+                        </div>
+                      )}
+
                       {/* Experience */}
                       {reviewTab === "experience" && (
                         <div className="space-y-4">
@@ -877,6 +1177,7 @@ export function CreateWizard() {
                           ))}
                         </div>
                       )}
+
                       {/* Education */}
                       {reviewTab === "education" && (
                         <div className="space-y-4">
@@ -897,6 +1198,7 @@ export function CreateWizard() {
                           ))}
                         </div>
                       )}
+
                       {/* Skills */}
                       {reviewTab === "skills" && (
                         <div className="space-y-4">
@@ -935,42 +1237,18 @@ export function CreateWizard() {
                           )}
                         </div>
                       )}
+
+                      {/* AI Coach */}
+                      {reviewTab === "aicoach" && (
+                        <AiCoachTab suggestions={parsedResume.ats.suggestions} />
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* ATS panel */}
+                {/* ATS breakdown panel */}
                 <div className="space-y-4">
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                    <h3 className="font-semibold text-slate-900 text-sm mb-4 flex items-center gap-2">
-                      <Zap className="h-4 w-4 text-blue-600" />ATS Analysis
-                    </h3>
-                    <div className="flex justify-center mb-4"><AtsRing score={parsedResume.ats.score} /></div>
-                    {parsedResume.ats.missing.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs font-semibold text-red-600 mb-1.5 flex items-center gap-1">
-                          <AlertCircle className="h-3.5 w-3.5" />Missing
-                        </p>
-                        <ul className="space-y-1">
-                          {parsedResume.ats.missing.map((m) => (
-                            <li key={m} className="text-xs text-slate-600 flex gap-1.5"><span className="text-red-400">•</span>{m}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {parsedResume.ats.suggestions.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-blue-600 mb-1.5 flex items-center gap-1">
-                          <Info className="h-3.5 w-3.5" />Tips
-                        </p>
-                        <ul className="space-y-1.5">
-                          {parsedResume.ats.suggestions.slice(0, 4).map((s) => (
-                            <li key={s} className="text-xs text-slate-600 flex gap-1.5"><span className="text-blue-400 shrink-0">→</span>{s}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+                  <AtsBreakdownPanel ats={parsedResume.ats} />
                   <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 text-xs text-slate-500 space-y-1">
                     <div className="flex justify-between"><span>File type</span><span className="font-semibold text-slate-700 uppercase">{parsedResume.fileType}</span></div>
                     <div className="flex justify-between"><span>Pages</span><span className="font-semibold text-slate-700">{parsedResume.pageCount}</span></div>
@@ -1063,7 +1341,6 @@ export function CreateWizard() {
                 </Button>
               ) : <div />}
 
-              {/* Next / action button */}
               {step === "upload" ? (
                 <Button onClick={goNext} disabled={!canNext()} className="bg-blue-600 hover:bg-blue-700 min-w-[160px]">
                   {uploadMode === "file" ? (
