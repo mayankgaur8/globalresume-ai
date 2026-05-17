@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/toaster"
-import type { ParsedResume, ATSBreakdown, AISuggestion } from "@/lib/resume-parser"
+import type { ParsedResume, ATSBreakdown, AISuggestion, ParsedEducation } from "@/lib/resume-parser"
 import type { ParsedContact } from "@/lib/resume-parser"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -88,6 +88,18 @@ const TEMPLATE_COUNTRY: Record<string, string> = {
 
 const PHOTO_TEMPLATES = new Set(["german", "french", "japanese", "creative"])
 
+const QUICK_DEGREES: { label: string; degree: string; field: string }[] = [
+  { label: "B.Tech / BE",   degree: "Bachelor of Technology",           field: "Engineering"          },
+  { label: "MCA",           degree: "Master of Computer Applications",   field: "Computer Science"     },
+  { label: "MBA",           degree: "Master of Business Administration", field: "Business"             },
+  { label: "M.Tech",        degree: "Master of Technology",              field: "Engineering"          },
+  { label: "BCA",           degree: "Bachelor of Computer Applications", field: "Computer Science"     },
+  { label: "Bachelor's",    degree: "Bachelor's Degree",                 field: ""                     },
+  { label: "Master's",      degree: "Master's Degree",                   field: ""                     },
+  { label: "Diploma",       degree: "Diploma",                           field: ""                     },
+  { label: "PhD",           degree: "Doctor of Philosophy",              field: ""                     },
+]
+
 const EXPERIENCE_OPTIONS = [
   { id: "none"  as ExperienceLevel, label: "No Experience",    sub: "Student or fresh graduate", icon: "🎓" },
   { id: "lt3"   as ExperienceLevel, label: "Less Than 3 Years",sub: "Early career professional", icon: "🌱" },
@@ -116,6 +128,7 @@ function TemplateSVG({ templateId }: { templateId: string }) {
     global:       { accent: "#7C3AED", header: "#4C1D95", bg: "#F5F3FF" },
   }
   const c = configs[templateId] ?? configs.modern
+  const hasPhoto = PHOTO_TEMPLATES.has(templateId)
   const vw = 120; const vh = 160
   return (
     <svg viewBox={`0 0 ${vw} ${vh}`} xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
@@ -123,7 +136,14 @@ function TemplateSVG({ templateId }: { templateId: string }) {
       {c.sidebar ? (
         <>
           <rect width={vw * 0.32} height={vh} fill={c.header} />
-          <circle cx={vw * 0.16} cy={vh * 0.12} r={vw * 0.09} fill="white" opacity="0.25" />
+          {/* Photo circle — prominent for photo templates, subtle for others */}
+          <circle cx={vw * 0.16} cy={vh * 0.12} r={vw * 0.09} fill="white" opacity={hasPhoto ? "0.9" : "0.2"} />
+          {hasPhoto && (
+            <>
+              <circle cx={vw * 0.16} cy={vh * 0.105} r={vw * 0.04} fill={c.header} opacity="0.4" />
+              <ellipse cx={vw * 0.16} cy={vh * 0.155} rx={vw * 0.065} ry={vw * 0.04} fill={c.header} opacity="0.25" />
+            </>
+          )}
           <rect x={vw * 0.06} y={vh * 0.25} width={vw * 0.22} height={3} rx="1.5" fill="white" opacity="0.8" />
           <rect x={vw * 0.06} y={vh * 0.31} width={vw * 0.18} height={2} rx="1" fill="white" opacity="0.5" />
           <rect x={vw * 0.38} y={vh * 0.06} width={vw * 0.3}  height={4} rx="2" fill={c.header} />
@@ -137,8 +157,21 @@ function TemplateSVG({ templateId }: { templateId: string }) {
       ) : (
         <>
           <rect width={vw} height={vh * 0.25} fill={c.header} />
-          <rect x={vw * 0.06} y={vh * 0.065} width={vw * 0.42} height={4} rx="2" fill="white" opacity="0.9" />
-          <rect x={vw * 0.06} y={vh * 0.115} width={vw * 0.3}  height={3} rx="1.5" fill="white" opacity="0.6" />
+          {hasPhoto ? (
+            /* Photo on right side of header for non-sidebar photo templates */
+            <>
+              <circle cx={vw * 0.82} cy={vh * 0.125} r={vw * 0.1} fill="white" opacity="0.9" />
+              <circle cx={vw * 0.82} cy={vh * 0.11} r={vw * 0.04} fill={c.header} opacity="0.4" />
+              <ellipse cx={vw * 0.82} cy={vh * 0.155} rx={vw * 0.07} ry={vw * 0.04} fill={c.header} opacity="0.25" />
+              <rect x={vw * 0.06} y={vh * 0.065} width={vw * 0.62} height={4} rx="2" fill="white" opacity="0.9" />
+              <rect x={vw * 0.06} y={vh * 0.115} width={vw * 0.45} height={3} rx="1.5" fill="white" opacity="0.6" />
+            </>
+          ) : (
+            <>
+              <rect x={vw * 0.06} y={vh * 0.065} width={vw * 0.42} height={4} rx="2" fill="white" opacity="0.9" />
+              <rect x={vw * 0.06} y={vh * 0.115} width={vw * 0.3}  height={3} rx="1.5" fill="white" opacity="0.6" />
+            </>
+          )}
           <rect x={vw * 0.06} y={vh * 0.3}   width={vw * 0.26} height={2.5} rx="1.25" fill={c.accent} />
           <rect x={vw * 0.06} y={vh * 0.37}  width={vw * 0.88} height={1.5} rx="0.75" fill="#CBD5E1" />
           <rect x={vw * 0.06} y={vh * 0.41}  width={vw * 0.75} height={1.5} rx="0.75" fill="#CBD5E1" />
@@ -295,11 +328,48 @@ function AtsBreakdownPanel({ ats }: { ats: ATSBreakdown }) {
 
 // ── AI Coach Tab ──────────────────────────────────────────────────────────────
 
-function AiCoachTab({ suggestions: initialSuggestions }: { suggestions: AISuggestion[] }) {
+function AiCoachTab({
+  suggestions: initialSuggestions,
+  onApplySummary,
+  onApplyContact,
+}: {
+  suggestions: AISuggestion[]
+  onApplySummary: (text: string) => void
+  onApplyContact: (field: keyof ParsedContact, value: string) => void
+}) {
   const [suggestions, setSuggestions] = useState<AISuggestion[]>(initialSuggestions)
   const { toast } = useToast()
 
   const dismiss = (id: string) => setSuggestions((prev) => prev.filter((s) => s.id !== id))
+
+  const handleApply = (s: AISuggestion) => {
+    if (!s.exampleText) {
+      toast("Open the builder to apply this change", "info")
+      return
+    }
+    if (s.section === "summary") {
+      onApplySummary(s.exampleText)
+      toast("Summary updated — check the Summary tab", "success")
+      dismiss(s.id)
+      return
+    }
+    const contactFieldMap: Partial<Record<string, keyof ParsedContact>> = {
+      "add-phone":    "phone",
+      "add-email":    "email",
+      "add-linkedin": "linkedin",
+      "add-github":   "github",
+      "add-location": "location",
+      "fix-linkedin": "linkedin",
+    }
+    const field = contactFieldMap[s.id]
+    if (field) {
+      onApplyContact(field, s.exampleText)
+      toast(`${s.title} applied`, "success")
+      dismiss(s.id)
+      return
+    }
+    toast("Open the builder to apply this change", "info")
+  }
 
   const priorityColors: Record<string, string> = {
     high:   "bg-red-100 text-red-700",
@@ -341,7 +411,7 @@ function AiCoachTab({ suggestions: initialSuggestions }: { suggestions: AISugges
           <p className="text-xs text-slate-700 font-medium">{s.fix}</p>
           {s.exampleText && (
             <div className="relative mt-1">
-              <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-3 whitespace-pre-wrap font-mono text-slate-700 leading-relaxed">
+              <pre className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg p-3 whitespace-pre-wrap font-mono text-slate-700 leading-relaxed pr-8">
                 {s.exampleText}
               </pre>
               <button
@@ -356,6 +426,21 @@ function AiCoachTab({ suggestions: initialSuggestions }: { suggestions: AISugges
               </button>
             </div>
           )}
+          <div className="flex gap-2 pt-1">
+            <Button
+              size="sm"
+              onClick={() => handleApply(s)}
+              className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Apply suggestion
+            </Button>
+            <button
+              onClick={() => dismiss(s.id)}
+              className="h-7 px-3 text-xs rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -427,6 +512,7 @@ export function CreateWizard() {
   // Editable parsed fields
   const [editedContact, setEditedContact] = useState<ParsedContact>({})
   const [editedSummary, setEditedSummary] = useState("")
+  const [editedEducation, setEditedEducation] = useState<ParsedEducation[]>([])
 
   // Contact form (contact step)
   const [contact, setContact] = useState<ContactInfo>({
@@ -517,6 +603,7 @@ export function CreateWizard() {
       setParsedResume(parsed)
       setEditedContact(parsed.contact)
       setEditedSummary(parsed.summary)
+      setEditedEducation(parsed.education)
 
       // Auto-fill contact form
       const nameParts = (parsed.contact.fullName ?? "").trim().split(/\s+/)
@@ -579,7 +666,8 @@ export function CreateWizard() {
       const summaryText = parsedResume ? editedSummary : ""
       if (summaryText) sections.push({ type: "SUMMARY", content: { text: summaryText }, order: 1 })
       parsedResume?.experience.forEach((e, i) => sections.push({ type: "EXPERIENCE", content: e, order: 10 + i }))
-      parsedResume?.education.forEach((e, i) => sections.push({ type: "EDUCATION", content: e, order: 50 + i }))
+      const educationToSave = editedEducation.length > 0 ? editedEducation : (parsedResume?.education ?? [])
+      educationToSave.forEach((e, i) => sections.push({ type: "EDUCATION", content: e, order: 50 + i }))
       if (parsedResume?.skills.all.length) sections.push({ type: "SKILLS", content: { items: parsedResume.skills.all }, order: 100 })
 
       const res = await fetch("/api/resumes", {
@@ -633,6 +721,12 @@ export function CreateWizard() {
     else if (step === "parsing") { setStep("upload"); setParseError(null) }
     else if (step === "review") setStep("upload")
     else if (step === "contact") setStep(parsedResume ? "review" : "upload")
+  }
+
+  const addQuickEducation = (d: { degree: string; field: string }) => {
+    const newEdu: ParsedEducation = { institution: "", degree: d.degree, field: d.field, startDate: "", endDate: "", location: "" }
+    setEditedEducation((prev) => [...prev, newEdu])
+    toast("Education added — fill in institution and dates in the builder", "success")
   }
 
   const resetToUpload = () => {
@@ -1181,19 +1275,47 @@ export function CreateWizard() {
                       {/* Education */}
                       {reviewTab === "education" && (
                         <div className="space-y-4">
-                          {parsedResume.education.length === 0 ? (
-                            <div className="text-center py-8">
-                              <GraduationCap className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                              <p className="text-sm text-slate-500">No education detected</p>
+                          {editedEducation.length === 0 && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                              <p className="text-sm font-semibold text-amber-900 mb-1 flex items-center gap-2">
+                                <AlertCircle className="h-4 w-4 shrink-0" />No education detected
+                              </p>
+                              <p className="text-xs text-amber-700 mb-3">What is your highest qualification?</p>
+                              <div className="flex flex-wrap gap-2">
+                                {QUICK_DEGREES.map((d) => (
+                                  <button
+                                    key={d.label}
+                                    onClick={() => addQuickEducation(d)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors"
+                                  >
+                                    {d.label}
+                                  </button>
+                                ))}
+                              </div>
+                              <p className="text-xs text-amber-600 mt-3">
+                                Select a degree to add it, then complete the details in the builder.
+                              </p>
                             </div>
-                          ) : parsedResume.education.map((edu, i) => (
+                          )}
+                          {editedEducation.map((edu, i) => (
                             <div key={i} className="border border-slate-100 rounded-xl p-4">
-                              <p className="font-semibold text-slate-900 text-sm">{edu.institution || "Unknown Institution"}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">{[edu.degree, edu.field].filter(Boolean).join(" in ") || "Unknown Degree"}</p>
-                              {(edu.startDate || edu.endDate) && (
-                                <p className="text-xs text-slate-400 mt-1">{edu.startDate} – {edu.endDate}</p>
-                              )}
-                              {edu.gpa && <p className="text-xs text-slate-500 mt-1">GPA: {edu.gpa}</p>}
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <p className="font-semibold text-slate-900 text-sm">{edu.institution || <span className="text-slate-400 italic">Institution TBD</span>}</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">{[edu.degree, edu.field].filter(Boolean).join(" in ") || "Unknown Degree"}</p>
+                                  {(edu.startDate || edu.endDate) && (
+                                    <p className="text-xs text-slate-400 mt-1">{edu.startDate} – {edu.endDate}</p>
+                                  )}
+                                  {edu.gpa && <p className="text-xs text-slate-500 mt-1">GPA: {edu.gpa}</p>}
+                                </div>
+                                <button
+                                  onClick={() => setEditedEducation((prev) => prev.filter((_, idx) => idx !== i))}
+                                  className="text-slate-300 hover:text-red-400 shrink-0"
+                                  title="Remove"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1240,7 +1362,14 @@ export function CreateWizard() {
 
                       {/* AI Coach */}
                       {reviewTab === "aicoach" && (
-                        <AiCoachTab suggestions={parsedResume.ats.suggestions} />
+                        <AiCoachTab
+                          suggestions={parsedResume.ats.suggestions}
+                          onApplySummary={(text) => { setEditedSummary(text); setReviewTab("summary") }}
+                          onApplyContact={(field, value) => {
+                            setEditedContact((prev) => ({ ...prev, [field]: value }))
+                            setReviewTab("contact")
+                          }}
+                        />
                       )}
                     </div>
                   </div>
