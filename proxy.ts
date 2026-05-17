@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-const protectedPrefixes = ["/dashboard", "/admin"]
+const protectedPrefixes = ["/dashboard", "/admin", "/onboarding"]
 const adminOnlyPrefixes = ["/admin"]
 
 export async function proxy(request: NextRequest) {
@@ -28,5 +28,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*"],
+  matcher: ["/dashboard/:path*", "/admin/:path*", "/onboarding"],
 }
