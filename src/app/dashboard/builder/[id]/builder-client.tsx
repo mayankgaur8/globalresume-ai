@@ -10,6 +10,8 @@ import {
   Save, Download, Printer, ArrowLeft, FileText, Briefcase,
   GraduationCap, Code, User, CheckSquare, Loader2,
   BookOpen, Globe, FolderOpen, Plus, Trash2, Sparkles, Target,
+  Undo2, Redo2, ZoomIn, ZoomOut, MoreHorizontal, CheckCircle2,
+  Palette, Mail,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -53,6 +55,8 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   const [atsJobDesc, setAtsJobDesc] = useState("")
   const [atsResult, setAtsResult] = useState<{ score: number; suggestions: string[] } | null>(null)
   const [atsLoading, setAtsLoading] = useState(false)
+  const [zoom, setZoom] = useState(100)
+  const [leftTab, setLeftTab] = useState<"sections" | "design" | "ai">("sections")
 
   useEffect(() => {
     setIsMounted(true) // eslint-disable-line react-hooks/set-state-in-effect
@@ -149,41 +153,111 @@ export function BuilderClient({ resumeId, userRole }: Props) {
 
   return (
     <div className="flex h-screen flex-col bg-slate-100 overflow-hidden">
-      <header className="h-14 bg-white border-b flex items-center justify-between px-4 shrink-0 print:hidden">
-        <div className="flex items-center gap-3">
+      {/* Top bar */}
+      <header className="h-14 bg-white border-b flex items-center justify-between px-3 shrink-0 print:hidden gap-2">
+        {/* Left: back + name + save status */}
+        <div className="flex items-center gap-2 min-w-0">
           <Link href="/dashboard">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
+            <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
           </Link>
           <Input
             value={data.title}
             onChange={(e) => setData({ title: e.target.value })}
-            className="w-64 border-transparent hover:border-slate-200 focus-visible:ring-0 text-lg font-semibold px-2"
+            className="w-48 border-transparent hover:border-slate-200 focus-visible:ring-0 font-semibold px-2 h-8 text-sm"
           />
-          {lastSaved && <span className="text-xs text-slate-400 hidden sm:block">Saved {lastSaved.toLocaleTimeString()}</span>}
+          <div className="flex items-center gap-1 shrink-0">
+            {isSaving
+              ? <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-spin" />
+              : lastSaved
+                ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                : null}
+            {lastSaved && (
+              <span className="text-xs text-slate-400 hidden md:block">
+                {isSaving ? "Saving…" : `Saved ${lastSaved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={save} disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}Save
+
+        {/* Center: undo/redo + zoom */}
+        <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="Undo" disabled>
+            <Undo2 className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer className="h-4 w-4 mr-2" />Print
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="Redo" disabled>
+            <Redo2 className="h-4 w-4" />
           </Button>
-          <Button className="bg-blue-600 hover:bg-blue-700" size="sm" onClick={handleDownloadPDF}>
-            <Download className="h-4 w-4 mr-2" />Download PDF
+          <div className="w-px h-5 bg-slate-200 mx-1" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="Zoom out"
+            onClick={() => setZoom((z) => Math.max(50, z - 10))}>
+            <ZoomOut className="h-4 w-4" />
           </Button>
+          <span className="text-xs font-mono text-slate-600 w-10 text-center">{zoom}%</span>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="Zoom in"
+            onClick={() => setZoom((z) => Math.min(150, z + 10))}>
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Right: actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hidden sm:flex" onClick={save} disabled={isSaving} title="Save">
+            <Save className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hidden sm:flex" onClick={() => window.print()} title="Print">
+            <Printer className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hidden sm:flex" title="Email">
+            <Mail className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" title="More options">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+          <Button className="bg-blue-600 hover:bg-blue-700 h-8 px-3 text-xs font-semibold" onClick={handleDownloadPDF}>
+            <Download className="h-3.5 w-3.5 mr-1.5" />Download
+          </Button>
+          <Link href="/dashboard/resumes">
+            <Button className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 text-xs font-semibold hidden md:flex">
+              Finish
+            </Button>
+          </Link>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Icon nav column */}
-        <div className="w-16 bg-slate-800 flex flex-col items-center py-4 gap-1 shrink-0 print:hidden">
-          {navSections.map((s) => (
+        {/* Left tab bar */}
+        <div className="w-14 bg-slate-900 flex flex-col items-center py-3 gap-1 shrink-0 print:hidden">
+          {/* Section tabs */}
+          {[
+            { id: "sections" as const, icon: <User className="h-5 w-5" />, label: "Edit" },
+            { id: "design" as const, icon: <Palette className="h-5 w-5" />, label: "Design" },
+            { id: "ai" as const, icon: <Sparkles className="h-5 w-5" />, label: "AI" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setLeftTab(tab.id)}
+              title={tab.label}
+              className={`flex flex-col items-center gap-0.5 p-2 rounded-lg w-11 text-[9px] font-medium transition-colors ${
+                leftTab === tab.id ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-700 hover:text-white"
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+
+          <div className="w-8 h-px bg-slate-700 my-1" />
+
+          {/* Section shortcuts (only in sections tab) */}
+          {leftTab === "sections" && navSections.map((s) => (
             <button
               key={s}
               onClick={() => setActiveSection(s)}
               title={SECTION_LABELS[s]}
-              className={`flex flex-col items-center gap-0.5 p-2 rounded-lg w-12 text-[9px] transition-colors ${
-                activeSection === s ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-700 hover:text-white"
+              className={`flex flex-col items-center gap-0.5 p-1.5 rounded-lg w-11 text-[8px] transition-colors ${
+                activeSection === s ? "bg-blue-600/20 text-blue-400 ring-1 ring-blue-500" : "text-slate-500 hover:bg-slate-700 hover:text-white"
               }`}
             >
               {sectionIcons[s]}
@@ -193,136 +267,174 @@ export function BuilderClient({ resumeId, userRole }: Props) {
         </div>
 
         {/* Editor panel */}
-        <div className="w-[360px] bg-white border-r flex flex-col shrink-0 z-10 shadow-lg print:hidden">
-          <div className="p-4 border-b font-semibold text-slate-900">{SECTION_LABELS[activeSection]}</div>
-          <ScrollArea className="flex-1 p-5">
-            <SectionEditor
-              section={activeSection}
-              data={data}
-              updateContact={updateContact}
-              setData={setData}
-              addExperience={addExperience}
-              updateExperience={updateExperience}
-              removeExperience={removeExperience}
-              onToast={toast}
-            />
-          </ScrollArea>
+        <div className="w-[340px] bg-white border-r flex flex-col shrink-0 z-10 shadow-md print:hidden">
+          {leftTab === "sections" && (
+            <>
+              <div className="px-4 py-3 border-b bg-slate-50 flex items-center gap-2">
+                <span className="font-semibold text-slate-800 text-sm">{SECTION_LABELS[activeSection]}</span>
+              </div>
+              <ScrollArea className="flex-1 p-4">
+                <SectionEditor
+                  section={activeSection}
+                  data={data}
+                  updateContact={updateContact}
+                  setData={setData}
+                  addExperience={addExperience}
+                  updateExperience={updateExperience}
+                  removeExperience={removeExperience}
+                  onToast={toast}
+                />
+              </ScrollArea>
+            </>
+          )}
+
+          {leftTab === "design" && (
+            <>
+              <div className="px-4 py-3 border-b bg-slate-50">
+                <span className="font-semibold text-slate-800 text-sm">Design & Formatting</span>
+              </div>
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500">Template</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {["modern", "classic", "minimal", "executive"].map((t) => (
+                        <button key={t} onClick={() => setData({ template: t })}
+                          className={`border rounded-lg p-2 text-center text-xs cursor-pointer capitalize transition-colors ${
+                            data.template === t ? "border-blue-600 bg-blue-50 text-blue-600 font-medium" : "hover:bg-slate-50 text-slate-600"
+                          }`}>{t}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500">Accent Color</Label>
+                    <div className="flex gap-2">
+                      {["#3B82F6", "#7C3AED", "#059669", "#DC2626", "#D97706", "#111827"].map((color) => (
+                        <button key={color} className="h-7 w-7 rounded-full border-2 border-white ring-2 ring-slate-200 hover:ring-slate-400 transition-all" style={{ backgroundColor: color }} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500">Font</Label>
+                    <select className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 text-sm">
+                      <option>Inter (Modern)</option>
+                      <option>Georgia (Classic)</option>
+                      <option>Helvetica (Clean)</option>
+                      <option>Times New Roman (Traditional)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500">Spacing</Label>
+                    <div className="flex gap-1.5">
+                      {["Compact", "Normal", "Spacious"].map((s) => (
+                        <button key={s} className="flex-1 border rounded-lg py-1.5 text-xs text-slate-600 hover:bg-slate-50 hover:border-blue-300 transition-colors">{s}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500">Language</Label>
+                    <select className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 text-sm" value={data.language} onChange={(e) => setData({ language: e.target.value })}>
+                      <option value="en">English</option>
+                      <option value="de">German</option>
+                      <option value="fr">French</option>
+                      <option value="es">Spanish</option>
+                      <option value="pt">Portuguese</option>
+                      <option value="ja">Japanese</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500">Target Country</Label>
+                    <select className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 text-sm" value={data.targetCountry} onChange={(e) => setData({ targetCountry: e.target.value })}>
+                      <option value="US">USA</option>
+                      <option value="DE">Germany</option>
+                      <option value="UK">United Kingdom</option>
+                      <option value="FR">France</option>
+                      <option value="JP">Japan</option>
+                    </select>
+                  </div>
+                </div>
+              </ScrollArea>
+            </>
+          )}
+
+          {leftTab === "ai" && (
+            <>
+              <div className="px-4 py-3 border-b bg-slate-50">
+                <span className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-violet-600" />AI Assistant
+                </span>
+              </div>
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-500">AI tools to supercharge your resume</p>
+                  {[
+                    { label: "Generate Summary", desc: "Write a professional summary", icon: <FileText className="h-4 w-4" />, color: "text-violet-600 bg-violet-50" },
+                    { label: "Improve Bullets", desc: "Make bullets more impactful", icon: <Sparkles className="h-4 w-4" />, color: "text-blue-600 bg-blue-50" },
+                    { label: "ATS Optimize", desc: "Match job description keywords", icon: <Target className="h-4 w-4" />, color: "text-emerald-600 bg-emerald-50" },
+                    { label: "Translate Resume", desc: "Translate to another language", icon: <Globe className="h-4 w-4" />, color: "text-amber-600 bg-amber-50" },
+                  ].map((action) => (
+                    <button key={action.label} onClick={() => { setLeftTab("sections"); setActiveSection(action.label.includes("Summary") ? "summary" : "experience") }}
+                      className="w-full flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/30 transition-all text-left">
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${action.color}`}>
+                        {action.icon}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{action.label}</p>
+                        <p className="text-xs text-slate-500">{action.desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                  <div className="border-t border-slate-100 pt-3 space-y-2">
+                    <Label className="text-xs font-semibold uppercase text-slate-500 flex items-center gap-1">
+                      <Target className="h-3 w-3" />ATS Score
+                    </Label>
+                    <textarea
+                      className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-transparent px-2 py-1.5 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+                      placeholder="Paste job description..."
+                      value={atsJobDesc}
+                      onChange={(e) => setAtsJobDesc(e.target.value)}
+                    />
+                    <Button size="sm" className="w-full text-xs bg-purple-600 hover:bg-purple-700" disabled={atsLoading || !atsJobDesc.trim()}
+                      onClick={async () => {
+                        setAtsLoading(true); setAtsResult(null)
+                        try {
+                          const resumeText = [`${data.contact.firstName} ${data.contact.lastName}`, data.summary, ...data.experience.map((e) => `${e.position} at ${e.company}: ${e.description}`), ...data.skills.map((s) => s.name)].join("\n")
+                          setAtsResult(await optimizeForATS(resumeText, atsJobDesc))
+                        } catch { setAtsResult({ score: 0, suggestions: ["Analysis failed. Try again."] }) }
+                        finally { setAtsLoading(false) }
+                      }}>
+                      {atsLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Target className="h-3 w-3 mr-1" />}Analyze
+                    </Button>
+                    {atsResult && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">ATS Score</span>
+                          <span className={`text-sm font-bold ${atsResult.score >= 80 ? "text-emerald-600" : atsResult.score >= 60 ? "text-amber-600" : "text-red-600"}`}>{atsResult.score}/100</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${atsResult.score >= 80 ? "bg-emerald-500" : atsResult.score >= 60 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${atsResult.score}%` }} />
+                        </div>
+                        <ul className="space-y-1">
+                          {atsResult.suggestions.map((s, i) => (
+                            <li key={i} className="text-xs text-slate-600 flex gap-1.5"><span className="text-amber-500 shrink-0">•</span>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </ScrollArea>
+            </>
+          )}
         </div>
 
         {/* Preview */}
         <div className="flex-1 bg-slate-200 overflow-y-auto p-8 flex justify-center print:p-0 print:bg-white">
-          <ResumePreview data={data} />
+          <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center", transition: "transform 0.2s ease" }}>
+            <ResumePreview data={data} />
+          </div>
         </div>
 
-        {/* Settings panel */}
-        <div className="w-[240px] bg-white border-l flex flex-col shrink-0 print:hidden">
-          <div className="p-4 border-b font-semibold text-slate-900 text-sm">Design & Settings</div>
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase text-slate-500">Template</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {["modern", "classic", "minimal", "executive"].map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setData({ template: t })}
-                      className={`border rounded-lg p-2 text-center text-xs cursor-pointer capitalize transition-colors ${
-                        data.template === t ? "border-blue-600 bg-blue-50 text-blue-600 font-medium" : "hover:bg-slate-50 text-slate-600"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase text-slate-500">Language</Label>
-                <select className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm" value={data.language} onChange={(e) => setData({ language: e.target.value })}>
-                  <option value="en">English</option>
-                  <option value="de">German</option>
-                  <option value="fr">French</option>
-                  <option value="es">Spanish</option>
-                  <option value="pt">Portuguese</option>
-                  <option value="ja">Japanese</option>
-                  <option value="zh">Chinese</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold uppercase text-slate-500">Target Country</Label>
-                <select className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm" value={data.targetCountry} onChange={(e) => setData({ targetCountry: e.target.value })}>
-                  <option value="US">USA</option>
-                  <option value="DE">Germany</option>
-                  <option value="UK">United Kingdom</option>
-                  <option value="FR">France</option>
-                  <option value="JP">Japan</option>
-                  <option value="ES">Spain</option>
-                  <option value="PT">Portugal</option>
-                  <option value="BR">Brazil</option>
-                </select>
-              </div>
-              <div className="space-y-2 border-t border-slate-100 pt-4">
-                <Label className="text-xs font-semibold uppercase text-slate-500 flex items-center gap-1">
-                  <Target className="h-3 w-3" />ATS Score
-                </Label>
-                <textarea
-                  className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-transparent px-2 py-1.5 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
-                  placeholder="Paste job description..."
-                  value={atsJobDesc}
-                  onChange={(e) => setAtsJobDesc(e.target.value)}
-                />
-                <Button
-                  size="sm"
-                  className="w-full text-xs bg-purple-600 hover:bg-purple-700"
-                  disabled={atsLoading || !atsJobDesc.trim()}
-                  onClick={async () => {
-                    setAtsLoading(true)
-                    setAtsResult(null)
-                    try {
-                      const resumeText = [
-                        `${data.contact.firstName} ${data.contact.lastName}`,
-                        data.summary,
-                        ...data.experience.map((e) => `${e.position} at ${e.company}: ${e.description}`),
-                        ...data.skills.map((s) => s.name),
-                      ].join("\n")
-                      const result = await optimizeForATS(resumeText, atsJobDesc)
-                      setAtsResult(result)
-                    } catch {
-                      setAtsResult({ score: 0, suggestions: ["Analysis failed. Try again."] })
-                    } finally {
-                      setAtsLoading(false)
-                    }
-                  }}
-                >
-                  {atsLoading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Target className="h-3 w-3 mr-1" />}
-                  Analyze
-                </Button>
-                {atsResult && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">ATS Score</span>
-                      <span className={`text-sm font-bold ${atsResult.score >= 80 ? "text-emerald-600" : atsResult.score >= 60 ? "text-amber-600" : "text-red-600"}`}>
-                        {atsResult.score}/100
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${atsResult.score >= 80 ? "bg-emerald-500" : atsResult.score >= 60 ? "bg-amber-500" : "bg-red-500"}`}
-                        style={{ width: `${atsResult.score}%` }}
-                      />
-                    </div>
-                    <ul className="space-y-1">
-                      {atsResult.suggestions.map((s, i) => (
-                        <li key={i} className="text-xs text-slate-600 flex gap-1.5">
-                          <span className="text-amber-500 shrink-0">•</span>{s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </div>
-          </ScrollArea>
-        </div>
       </div>
     </div>
   )
