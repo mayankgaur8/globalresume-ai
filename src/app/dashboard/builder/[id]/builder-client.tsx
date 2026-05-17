@@ -14,6 +14,7 @@ import {
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { generateSummary, rewriteBullet, optimizeForATS } from "@/actions/ai"
+import { useToast, type ToastType } from "@/components/ui/toaster"
 
 type Section = "contact" | "summary" | "experience" | "education" | "skills" | "projects" | "certifications" | "languages" | "portfolio"
 
@@ -41,6 +42,7 @@ interface Props {
 
 export function BuilderClient({ resumeId, userRole }: Props) {
   const router = useRouter()
+  const { toast } = useToast()
   const { data, updateContact, setData, addExperience, updateExperience, removeExperience } = useResumeStore()
   const [activeSection, setActiveSection] = useState<Section>("contact")
   const [isMounted, setIsMounted] = useState(false) // set after first effect to avoid SSR mismatch
@@ -97,10 +99,13 @@ export function BuilderClient({ resumeId, userRole }: Props) {
         })
       }
       setLastSaved(new Date())
+      toast("Resume saved successfully", "success")
+    } catch {
+      toast("Failed to save resume. Please try again.", "error")
     } finally {
       setIsSaving(false)
     }
-  }, [data, dbResumeId, router])
+  }, [data, dbResumeId, router, toast])
 
   useEffect(() => {
     if (!isMounted) return
@@ -199,6 +204,7 @@ export function BuilderClient({ resumeId, userRole }: Props) {
               addExperience={addExperience}
               updateExperience={updateExperience}
               removeExperience={removeExperience}
+              onToast={toast}
             />
           </ScrollArea>
         </div>
@@ -332,22 +338,22 @@ interface SectionEditorProps {
   addExperience: (e: Experience) => void
   updateExperience: (id: string, e: Partial<Experience>) => void
   removeExperience: (id: string) => void
+  onToast: (message: string, type?: ToastType, title?: string) => void
 }
 
-function SectionEditor({ section, data, updateContact, setData, addExperience, updateExperience, removeExperience }: SectionEditorProps) {
+function SectionEditor({ section, data, updateContact, setData, addExperience, updateExperience, removeExperience, onToast }: SectionEditorProps) {
   const [aiLoading, setAiLoading] = useState<string | null>(null)
-  const [aiError, setAiError] = useState<string | null>(null)
 
   const handleGenerateSummary = async () => {
     setAiLoading("summary")
-    setAiError(null)
     try {
       const jobTitle = data.experience[0]?.position || "Professional"
       const experienceText = data.experience.map((e) => `${e.position} at ${e.company}: ${e.description}`).join("\n")
       const result = await generateSummary(jobTitle, experienceText, data.language)
       setData({ summary: result })
+      onToast("Summary generated", "success")
     } catch (e) {
-      setAiError(e instanceof Error ? e.message : "AI generation failed")
+      onToast(e instanceof Error ? e.message : "AI generation failed", "error")
     } finally {
       setAiLoading(null)
     }
@@ -355,12 +361,12 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
 
   const handleRewriteBullet = async (expId: string, description: string, position: string) => {
     setAiLoading(expId)
-    setAiError(null)
     try {
       const result = await rewriteBullet(description, position, data.language)
       updateExperience(expId, { description: result })
+      onToast("Bullet rewritten", "success")
     } catch (e) {
-      setAiError(e instanceof Error ? e.message : "AI rewrite failed")
+      onToast(e instanceof Error ? e.message : "AI rewrite failed", "error")
     } finally {
       setAiLoading(null)
     }
@@ -429,7 +435,6 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
             Generate with AI
           </Button>
         </div>
-        {aiError && <p className="text-xs text-red-500">{aiError}</p>}
         <textarea
           className="flex min-h-[150px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
           value={data.summary}
@@ -492,7 +497,6 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
                   AI Rewrite
                 </Button>
               </div>
-              {aiError && aiLoading === null && <p className="text-xs text-red-500">{aiError}</p>}
               <textarea
                 className="flex min-h-[100px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
                 value={exp.description}

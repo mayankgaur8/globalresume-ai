@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useState } from "react"
 import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-type ToastType = "success" | "error" | "info" | "warning"
+export type ToastType = "success" | "error" | "info" | "warning"
 
 interface Toast {
   id: string

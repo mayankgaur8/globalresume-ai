@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import prisma from '../src/lib/prisma'
 import bcrypt from 'bcryptjs'
 
@@ -64,10 +65,10 @@ async function main() {
   }
 
   // 4. Create Users (Admin & Demo)
-  const hashedAdminPassword = await bcrypt.hash('admin123', 10)
-  await prisma.user.upsert({
+  const hashedAdminPassword = await bcrypt.hash('Admin@12345', 12)
+  const adminUser = await prisma.user.upsert({
     where: { email: 'admin@globalresumeai.com' },
-    update: {},
+    update: { hashedPassword: hashedAdminPassword, role: 'ADMIN' },
     create: {
       email: 'admin@globalresumeai.com',
       name: 'Admin User',
@@ -75,11 +76,19 @@ async function main() {
       role: 'ADMIN',
     },
   })
+  // Ensure admin has a FREE subscription
+  const adminSub = await prisma.subscription.findUnique({ where: { userId: adminUser.id } })
+  if (!adminSub) {
+    const freePlan = await prisma.plan.findUnique({ where: { name: 'FREE' } })
+    if (freePlan) {
+      await prisma.subscription.create({ data: { userId: adminUser.id, status: 'active', planId: freePlan.id } })
+    }
+  }
 
-  const hashedDemoPassword = await bcrypt.hash('demo123', 10)
+  const hashedDemoPassword = await bcrypt.hash('Demo@12345', 12)
   await prisma.user.upsert({
     where: { email: 'demo@globalresumeai.com' },
-    update: {},
+    update: { hashedPassword: hashedDemoPassword },
     create: {
       email: 'demo@globalresumeai.com',
       name: 'Demo User',
