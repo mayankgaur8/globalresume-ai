@@ -16,6 +16,7 @@ export type ResumeData = {
     country: string
     linkedin: string
     website: string
+    photoDataUrl?: string
   }
   summary: string
   experience: Array<{

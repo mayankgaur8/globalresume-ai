@@ -662,13 +662,55 @@ export function CreateWizard() {
         : filters.language === "Portuguese" ? "pt"
         : "en"
 
-      const sections: object[] = [{ type: "CONTACT", content: contact, order: 0 }]
-      const summaryText = parsedResume ? editedSummary : ""
-      if (summaryText) sections.push({ type: "SUMMARY", content: { text: summaryText }, order: 1 })
-      parsedResume?.experience.forEach((e, i) => sections.push({ type: "EXPERIENCE", content: e, order: 10 + i }))
+      // Map parsed data to builder-compatible section format
+      const contactContent = {
+        firstName: contact.firstName || "",
+        lastName: contact.lastName || "",
+        email: contact.email || "",
+        phone: contact.phone || "",
+        address: "",
+        city: contact.city || "",
+        country: contact.country || "",
+        linkedin: contact.linkedin || "",
+        website: contact.website || "",
+      }
+
+      const experienceItems = (parsedResume?.experience ?? []).map((e, i) => ({
+        id: `exp-${i}`,
+        company: e.company || "",
+        position: e.title || "",
+        startDate: e.startDate || "",
+        endDate: e.endDate || "",
+        current: e.current ?? false,
+        description: e.bullets?.map((b) => `• ${b}`).join("\n") || "",
+      }))
+
       const educationToSave = editedEducation.length > 0 ? editedEducation : (parsedResume?.education ?? [])
-      educationToSave.forEach((e, i) => sections.push({ type: "EDUCATION", content: e, order: 50 + i }))
-      if (parsedResume?.skills.all.length) sections.push({ type: "SKILLS", content: { items: parsedResume.skills.all }, order: 100 })
+      const educationItems = educationToSave.map((e, i) => ({
+        id: `edu-${i}`,
+        institution: e.institution || "",
+        degree: e.degree || "",
+        field: e.field || "",
+        startDate: e.startDate || "",
+        endDate: e.endDate || "",
+      }))
+
+      const skillItems = (parsedResume?.skills.all ?? []).map((name, i) => ({
+        id: `skill-${i}`,
+        name,
+        level: "Intermediate",
+      }))
+
+      const sections: object[] = [
+        { type: "CONTACT",        content: contactContent,                 order: 0 },
+        { type: "SUMMARY",        content: { text: editedSummary || "" },  order: 1 },
+        { type: "EXPERIENCE",     content: { items: experienceItems },      order: 2 },
+        { type: "EDUCATION",      content: { items: educationItems },       order: 3 },
+        { type: "SKILLS",         content: { items: skillItems },           order: 4 },
+        { type: "LANGUAGES",      content: { items: parsedResume?.languages ?? [] }, order: 5 },
+        { type: "CERTIFICATIONS", content: { items: parsedResume?.certifications ?? [] }, order: 6 },
+        { type: "PROJECTS",       content: { items: parsedResume?.projects ?? [] },       order: 7 },
+      ]
 
       const res = await fetch("/api/resumes", {
         method: "POST",

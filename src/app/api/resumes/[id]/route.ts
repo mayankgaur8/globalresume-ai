@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import prisma from "@/lib/prisma"
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!session?.user?.id) return new NextResponse("Unauthorized", { status: 401 })
 
@@ -34,34 +34,50 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return new NextResponse("Forbidden", { status: 403 })
   }
 
-  const { title, languageCode, templateId, targetCountry, sections } = body
+  const { title, languageCode, templateId, targetCountry, sections } = body as {
+    title?: string
+    languageCode?: string
+    templateId?: string
+    targetCountry?: string
+    sections?: Array<{ id?: string; type: string; content: unknown; order: number }>
+  }
 
-  const updated = await prisma.resume.update({
+  await prisma.resume.update({
     where: { id },
     data: {
-      ...(title && { title }),
+      ...(title      && { title }),
       ...(languageCode && { languageCode }),
       ...(templateId && { templateId }),
       ...(targetCountry && { targetCountry }),
     },
   })
 
-  // Upsert sections if provided
+  // Upsert sections. Prefer matching by (resumeId + type) so autosave works even
+  // when sections lack an id (builder sends them by type only).
   if (sections && Array.isArray(sections)) {
+    const existing = await prisma.resumeSection.findMany({ where: { resumeId: id } })
+    const existingByType = Object.fromEntries(existing.map((s) => [s.type, s]))
+
     for (const section of sections) {
+      const content = section.content as object
+
       if (section.id) {
-        await prisma.resumeSection.update({
+        // Caller supplied an explicit section id — use it
+        await prisma.resumeSection.upsert({
           where: { id: section.id },
-          data: { content: section.content, order: section.order },
+          update: { content, order: section.order },
+          create: { id: section.id, resumeId: id, type: section.type, content, order: section.order },
+        })
+      } else if (existingByType[section.type]) {
+        // Match by type
+        await prisma.resumeSection.update({
+          where: { id: existingByType[section.type].id },
+          data: { content, order: section.order },
         })
       } else {
+        // New section type — create
         await prisma.resumeSection.create({
-          data: {
-            resumeId: id,
-            type: section.type,
-            content: section.content,
-            order: section.order,
-          },
+          data: { resumeId: id, type: section.type, content, order: section.order },
         })
       }
     }
@@ -75,7 +91,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json(result)
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!session?.user?.id) return new NextResponse("Unauthorized", { status: 401 })
 
