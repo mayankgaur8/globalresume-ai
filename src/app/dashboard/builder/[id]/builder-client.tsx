@@ -19,9 +19,12 @@ import { generateSummary, rewriteBullet, optimizeForATS, translateContent } from
 import { useToast, type ToastType } from "@/components/ui/toaster"
 
 type Section = "contact" | "summary" | "experience" | "education" | "skills" | "projects" | "certifications" | "languages" | "portfolio"
-type Experience = ResumeData["experience"][number]
-type Education  = ResumeData["education"][number]
-type Skill      = ResumeData["skills"][number]
+type Experience     = ResumeData["experience"][number]
+type Education      = ResumeData["education"][number]
+type Skill          = ResumeData["skills"][number]
+type Project        = ResumeData["projects"][number]
+type Certification  = ResumeData["certifications"][number]
+type Lang           = ResumeData["languages"][number]
 
 const SECTION_LABELS: Record<Section, string> = {
   contact: "Contact", summary: "Summary", experience: "Work History",
@@ -83,9 +86,12 @@ export function BuilderClient({ resumeId, userRole }: Props) {
         const findSection = (type: string) => resume.sections?.find((s: { type: string }) => s.type === type)?.content
 
         const rawContact = findSection("CONTACT") || {}
-        const rawSkills  = (findSection("SKILLS")?.items     ?? []) as Array<string | { id: string; name: string; level: string }>
-        const rawEdu     = (findSection("EDUCATION")?.items  ?? []) as Array<{ id?: string; institution?: string; degree?: string; field?: string; startDate?: string; endDate?: string }>
-        const rawExp     = (findSection("EXPERIENCE")?.items ?? []) as Array<{ id?: string; company?: string; position?: string; startDate?: string; endDate?: string; current?: boolean; description?: string }>
+        const rawSkills  = (findSection("SKILLS")?.items        ?? []) as Array<string | { id: string; name: string; level: string }>
+        const rawEdu     = (findSection("EDUCATION")?.items     ?? []) as Array<{ id?: string; institution?: string; degree?: string; field?: string; startDate?: string; endDate?: string }>
+        const rawExp     = (findSection("EXPERIENCE")?.items    ?? []) as Array<{ id?: string; company?: string; position?: string; startDate?: string; endDate?: string; current?: boolean; description?: string }>
+        const rawProjects = (findSection("PROJECTS")?.items     ?? []) as Array<{ id?: string; name?: string; description?: string; url?: string; startDate?: string; endDate?: string }>
+        const rawCerts   = (findSection("CERTIFICATIONS")?.items ?? []) as Array<{ id?: string; name?: string; issuer?: string; date?: string; url?: string }>
+        const rawLangs   = (findSection("LANGUAGES")?.items     ?? []) as Array<{ id?: string; language?: string; proficiency?: string } | string>
 
         // Normalize skills: string[] (from parser) → {id,name,level}[]
         const skills: ResumeData["skills"] = rawSkills.map((s, i) =>
@@ -115,6 +121,29 @@ export function BuilderClient({ resumeId, userRole }: Props) {
           description: e.description || "",
         }))
 
+        const projects: ResumeData["projects"] = rawProjects.map((p, i) => ({
+          id: p.id || `proj-${i}`,
+          name: p.name || "",
+          description: p.description || "",
+          url: p.url || "",
+          startDate: p.startDate || "",
+          endDate: p.endDate || "",
+        }))
+
+        const certifications: ResumeData["certifications"] = rawCerts.map((c, i) => ({
+          id: c.id || `cert-${i}`,
+          name: c.name || "",
+          issuer: c.issuer || "",
+          date: c.date || "",
+          url: c.url || "",
+        }))
+
+        const languages: ResumeData["languages"] = rawLangs.map((l, i) =>
+          typeof l === "string"
+            ? { id: `lang-${i}`, language: l, proficiency: "Professional" }
+            : { id: l.id || `lang-${i}`, language: l.language || "", proficiency: l.proficiency || "Professional" }
+        )
+
         setData({
           id: resume.id,
           title: resume.title,
@@ -126,6 +155,9 @@ export function BuilderClient({ resumeId, userRole }: Props) {
           experience,
           education,
           skills,
+          projects,
+          certifications,
+          languages,
         })
       })
       .catch(() => {})
@@ -137,11 +169,14 @@ export function BuilderClient({ resumeId, userRole }: Props) {
     setIsSaving(true)
     try {
       const sections = [
-        { type: "CONTACT",    content: data.contact,                    order: 0 },
-        { type: "SUMMARY",    content: { text: data.summary },          order: 1 },
-        { type: "EXPERIENCE", content: { items: data.experience },       order: 2 },
-        { type: "EDUCATION",  content: { items: data.education },        order: 3 },
-        { type: "SKILLS",     content: { items: data.skills },           order: 4 },
+        { type: "CONTACT",        content: data.contact,                      order: 0 },
+        { type: "SUMMARY",        content: { text: data.summary },            order: 1 },
+        { type: "EXPERIENCE",     content: { items: data.experience },         order: 2 },
+        { type: "EDUCATION",      content: { items: data.education },          order: 3 },
+        { type: "SKILLS",         content: { items: data.skills },             order: 4 },
+        { type: "LANGUAGES",      content: { items: data.languages },          order: 5 },
+        { type: "CERTIFICATIONS", content: { items: data.certifications },     order: 6 },
+        { type: "PROJECTS",       content: { items: data.projects },           order: 7 },
       ]
 
       if (!dbResumeId) {
@@ -180,10 +215,19 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      toast("Photo must be under 5 MB", "error")
+      e.target.value = ""
+      return
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast("Only JPG, PNG, or WEBP photos are supported", "error")
+      e.target.value = ""
+      return
+    }
     const reader = new FileReader()
     reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string
-      updateContact({ photoDataUrl: dataUrl })
+      updateContact({ photoDataUrl: ev.target?.result as string })
       toast("Photo added", "success")
     }
     reader.readAsDataURL(file)
@@ -448,7 +492,6 @@ export function BuilderClient({ resumeId, userRole }: Props) {
 
         {/* Preview */}
         <div className="flex-1 bg-slate-200 overflow-y-auto p-8 flex justify-center print:p-0 print:bg-white">
-          <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
           <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center", transition: "transform 0.2s ease" }}>
             <ResumePreview data={data} />
           </div>
@@ -819,6 +862,85 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
     )
   }
 
+  if (section === "projects") {
+    return (
+      <div className="space-y-4">
+        <Button className="w-full" variant="outline" onClick={() => setData({ projects: [...data.projects, { id: crypto.randomUUID(), name: "", description: "", url: "", startDate: "", endDate: "" }] })}>
+          <Plus className="h-4 w-4 mr-2" />Add Project
+        </Button>
+        {data.projects.map((proj: Project, i: number) => (
+          <div key={proj.id} className="border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-slate-700 truncate pr-2">{proj.name || "New Project"}</span>
+              <button onClick={() => setData({ projects: data.projects.filter((_: Project, idx: number) => idx !== i) })} className="text-slate-400 hover:text-red-500 shrink-0"><Trash2 className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-1.5"><Label>Project Name</Label><Input value={proj.name} onChange={(e) => { const u = [...data.projects]; u[i] = { ...u[i], name: e.target.value }; setData({ projects: u }) }} /></div>
+            <div className="space-y-1.5"><Label>URL</Label><Input value={proj.url} placeholder="https://github.com/..." onChange={(e) => { const u = [...data.projects]; u[i] = { ...u[i], url: e.target.value }; setData({ projects: u }) }} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Start</Label><Input type="month" value={proj.startDate} onChange={(e) => { const u = [...data.projects]; u[i] = { ...u[i], startDate: e.target.value }; setData({ projects: u }) }} /></div>
+              <div className="space-y-1.5"><Label>End</Label><Input type="month" value={proj.endDate} onChange={(e) => { const u = [...data.projects]; u[i] = { ...u[i], endDate: e.target.value }; setData({ projects: u }) }} /></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+                value={proj.description}
+                onChange={(e) => { const u = [...data.projects]; u[i] = { ...u[i], description: e.target.value }; setData({ projects: u }) }}
+                placeholder="Built a tool that..." />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (section === "certifications") {
+    return (
+      <div className="space-y-4">
+        <Button className="w-full" variant="outline" onClick={() => setData({ certifications: [...data.certifications, { id: crypto.randomUUID(), name: "", issuer: "", date: "", url: "" }] })}>
+          <Plus className="h-4 w-4 mr-2" />Add Certification
+        </Button>
+        {data.certifications.map((cert: Certification, i: number) => (
+          <div key={cert.id} className="border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-slate-700 truncate pr-2">{cert.name || "New Certification"}</span>
+              <button onClick={() => setData({ certifications: data.certifications.filter((_: Certification, idx: number) => idx !== i) })} className="text-slate-400 hover:text-red-500 shrink-0"><Trash2 className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-1.5"><Label>Certification Name</Label><Input value={cert.name} onChange={(e) => { const u = [...data.certifications]; u[i] = { ...u[i], name: e.target.value }; setData({ certifications: u }) }} /></div>
+            <div className="space-y-1.5"><Label>Issuing Organization</Label><Input value={cert.issuer} onChange={(e) => { const u = [...data.certifications]; u[i] = { ...u[i], issuer: e.target.value }; setData({ certifications: u }) }} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Date</Label><Input type="month" value={cert.date} onChange={(e) => { const u = [...data.certifications]; u[i] = { ...u[i], date: e.target.value }; setData({ certifications: u }) }} /></div>
+              <div className="space-y-1.5"><Label>URL</Label><Input value={cert.url} placeholder="https://..." onChange={(e) => { const u = [...data.certifications]; u[i] = { ...u[i], url: e.target.value }; setData({ certifications: u }) }} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (section === "languages") {
+    return (
+      <div className="space-y-4">
+        <Button className="w-full" variant="outline" onClick={() => setData({ languages: [...data.languages, { id: crypto.randomUUID(), language: "", proficiency: "Professional" }] })}>
+          <Plus className="h-4 w-4 mr-2" />Add Language
+        </Button>
+        {data.languages.map((lang: Lang, i: number) => (
+          <div key={lang.id} className="flex gap-2 items-center">
+            <Input placeholder="Language" value={lang.language} onChange={(e) => { const u = [...data.languages]; u[i] = { ...u[i], language: e.target.value }; setData({ languages: u }) }} className="flex-1" />
+            <select className="h-9 rounded-md border border-slate-200 bg-transparent px-2 py-1 text-sm" value={lang.proficiency} onChange={(e) => { const u = [...data.languages]; u[i] = { ...u[i], proficiency: e.target.value }; setData({ languages: u }) }}>
+              <option>Native</option>
+              <option>Fluent</option>
+              <option>Professional</option>
+              <option>Conversational</option>
+              <option>Basic</option>
+            </select>
+            <button onClick={() => setData({ languages: data.languages.filter((_: Lang, idx: number) => idx !== i) })} className="text-slate-400 hover:text-red-500 shrink-0"><Trash2 className="h-4 w-4" /></button>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-40 text-slate-400 text-sm text-center">
       <p>This section is coming soon.</p>
@@ -1124,6 +1246,62 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
             {data.skills.map((skill) => (
               <span key={skill.id} className="text-xs px-2 py-0.5 rounded-full border border-slate-200 text-slate-700">
                 {skill.name}{skill.level !== "Intermediate" ? ` · ${skill.level}` : ""}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.projects && data.projects.length > 0 && (
+        <section>
+          <SHead title={h(lang, "projects")} />
+          <div className="space-y-3">
+            {data.projects.map((proj) => (
+              <div key={proj.id}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-semibold text-slate-900 text-sm">
+                      {proj.name || "Project"}
+                      {proj.url && <span className="font-normal text-xs ml-2" style={{ color: accent }}>{proj.url}</span>}
+                    </p>
+                  </div>
+                  {(proj.startDate || proj.endDate) && (
+                    <p className="text-xs text-slate-500 shrink-0 ml-2">
+                      {fmt(proj.startDate, lang)}{proj.endDate ? ` – ${fmt(proj.endDate, lang)}` : ""}
+                    </p>
+                  )}
+                </div>
+                {proj.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{proj.description}</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.certifications && data.certifications.length > 0 && (
+        <section>
+          <SHead title={h(lang, "certifications")} />
+          <div className="space-y-2">
+            {data.certifications.map((cert) => (
+              <div key={cert.id} className="flex justify-between items-start">
+                <div>
+                  <p className="font-semibold text-slate-900 text-sm">{cert.name || "Certification"}</p>
+                  {cert.issuer && <p className="text-xs" style={{ color: accent }}>{cert.issuer}</p>}
+                </div>
+                {cert.date && <p className="text-xs text-slate-500 shrink-0 ml-2">{fmt(cert.date, lang)}</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.languages && data.languages.length > 0 && (
+        <section>
+          <SHead title={h(lang, "languages")} />
+          <div className="flex flex-wrap gap-1.5">
+            {data.languages.map((l) => (
+              <span key={l.id} className="text-xs px-2 py-0.5 rounded-full border border-slate-200 text-slate-700">
+                {l.language}{l.proficiency ? ` · ${l.proficiency}` : ""}
               </span>
             ))}
           </div>

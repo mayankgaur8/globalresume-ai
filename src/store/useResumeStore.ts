@@ -37,6 +37,26 @@ export type ResumeData = {
     endDate: string
   }>
   skills: Array<{ id: string; name: string; level: string }>
+  projects: Array<{
+    id: string
+    name: string
+    description: string
+    url: string
+    startDate: string
+    endDate: string
+  }>
+  certifications: Array<{
+    id: string
+    name: string
+    issuer: string
+    date: string
+    url: string
+  }>
+  languages: Array<{
+    id: string
+    language: string
+    proficiency: string
+  }>
 }
 
 const initialData: ResumeData = {
@@ -59,6 +79,9 @@ const initialData: ResumeData = {
   experience: [],
   education: [],
   skills: [],
+  projects: [],
+  certifications: [],
+  languages: [],
 }
 
 type ResumeStore = {
