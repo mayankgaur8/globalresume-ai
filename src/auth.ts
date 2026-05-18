@@ -49,10 +49,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
+        const email = String(credentials.email).trim().toLowerCase()
 
         try {
           const user = await prisma.user.findUnique({
-            where: { email: String(credentials.email).toLowerCase() },
+            where: { email },
           })
 
           if (!user?.hashedPassword) return null
@@ -71,7 +72,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             role: user.role,
           }
         } catch (err) {
-          console.error("[auth] authorize error:", err)
+          console.error(`[DB_ERROR] ${JSON.stringify({
+            operation: "auth.user.findUnique",
+            email,
+            name: err instanceof Error ? err.name : typeof err,
+            code: typeof err === "object" && err && "code" in err ? (err as { code?: unknown }).code : undefined,
+            message: err instanceof Error ? err.message : String(err),
+          })}`)
+          console.error(`[SIGNUP_API] ${JSON.stringify({
+            event: "credential_signin_failed",
+            email,
+          })}`)
           return null
         }
       },

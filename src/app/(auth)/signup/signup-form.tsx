@@ -51,6 +51,24 @@ interface Props {
   googleEnabled: boolean
 }
 
+async function readSignupResponse(res: Response) {
+  const contentType = res.headers.get("content-type") ?? ""
+
+  if (contentType.includes("application/json")) {
+    const data = (await res.json().catch(() => null)) as {
+      message?: unknown
+      code?: unknown
+    } | null
+
+    return {
+      message: typeof data?.message === "string" ? data.message : "",
+      code: typeof data?.code === "string" ? data.code : "",
+    }
+  }
+
+  return { message: await res.text().catch(() => ""), code: "" }
+}
+
 export function SignupForm({ googleEnabled }: Props) {
   const router = useRouter()
   const { toast } = useToast()
@@ -80,22 +98,36 @@ export function SignupForm({ googleEnabled }: Props) {
       const registerRes = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: pwd, name }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password: pwd, name: name.trim() }),
       })
 
       if (!registerRes.ok) {
-        const msg = await registerRes.text()
-        if (registerRes.status === 409) {
+        const { message, code } = await readSignupResponse(registerRes)
+        console.error("[SIGNUP_FRONTEND]", {
+          status: registerRes.status,
+          code,
+          message,
+          email: email.trim().toLowerCase(),
+        })
+
+        if (registerRes.status === 409 || code === "EMAIL_EXISTS") {
           setError("An account with this email already exists. Try signing in.")
+        } else if (registerRes.status === 503 || code === "DATABASE_UNAVAILABLE") {
+          setError("Database unavailable. Please try again in a moment.")
         } else {
-          setError(msg || "Registration failed. Please try again.")
+          setError(message || "Registration failed. Please try again.")
         }
         setIsLoading(false)
         return
       }
 
-      const res = await signIn("credentials", { email, password: pwd, redirect: false })
+      const res = await signIn("credentials", { email: email.trim().toLowerCase(), password: pwd, redirect: false })
       if (res?.error) {
+        console.error("[SIGNUP_FRONTEND]", {
+          status: "signin_failed",
+          error: res.error,
+          email: email.trim().toLowerCase(),
+        })
         setError("Account created! Please sign in.")
         router.push("/login")
       } else {
@@ -103,7 +135,8 @@ export function SignupForm({ googleEnabled }: Props) {
         router.push("/onboarding")
         router.refresh()
       }
-    } catch {
+    } catch (error) {
+      console.error("[SIGNUP_FRONTEND]", error)
       setError("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
