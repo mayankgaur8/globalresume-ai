@@ -452,6 +452,7 @@ function computePresenceScore(data: ResumeData): {
 interface Props { resumeId: string; userId: string; userRole: string }
 
 export function BuilderClient({ resumeId, userRole }: Props) {
+  const isAdmin = userRole === "ADMIN"
   const router = useRouter()
   const { toast } = useToast()
   const { data, updateContact, setData, addExperience, updateExperience, removeExperience } = useResumeStore()
@@ -648,6 +649,48 @@ export function BuilderClient({ resumeId, userRole }: Props) {
     } finally { setIsTranslating(false) }
   }
 
+  const handleTranslateAll = async () => {
+    const lang = data.language
+    if (!lang || lang === "en") { toast("Select a non-English language first", "info"); return }
+    setIsTranslating(true)
+    toast("Translating full resume…", "info")
+    try {
+      // Build a structured block of all translatable text
+      const lines: string[] = []
+      if (data.summary) lines.push(`SUMMARY\n${data.summary}`)
+      data.experience.forEach((e, i) => {
+        if (e.description) lines.push(`EXP_${i}_DESC\n${e.description}`)
+      })
+      data.projects?.forEach((p, i) => {
+        if (p.description) lines.push(`PROJ_${i}_DESC\n${p.description}`)
+      })
+
+      const translated = await translateContent(lines.join("\n\n---\n\n"), lang)
+
+      // Parse translated blocks back
+      const blocks = translated.split(/\n---\n/)
+      const get = (prefix: string) => {
+        const b = blocks.find((bl) => bl.trim().startsWith(prefix))
+        return b ? b.replace(prefix, "").trim() : null
+      }
+
+      const newSummary  = get("SUMMARY") ?? data.summary
+      const newExp = data.experience.map((e, i) => {
+        const d = get(`EXP_${i}_DESC`)
+        return d ? { ...e, description: d } : e
+      })
+      const newProj = (data.projects ?? []).map((p, i) => {
+        const d = get(`PROJ_${i}_DESC`)
+        return d ? { ...p, description: d } : p
+      })
+
+      setData({ summary: newSummary, experience: newExp, projects: newProj })
+      toast("Full resume translated", "success")
+    } catch {
+      toast("Translation failed — partial content may have changed", "error")
+    } finally { setIsTranslating(false) }
+  }
+
   // ── PDF download ─────────────────────────────────────────────────────────────
 
   const handleDownloadPDF = async () => {
@@ -734,6 +777,11 @@ export function BuilderClient({ resumeId, userRole }: Props) {
           </Link>
           <Input value={data.title} onChange={(e) => setData({ title: e.target.value })}
             className="w-48 border-transparent hover:border-slate-200 focus-visible:ring-0 font-semibold px-2 h-8 text-sm" />
+          {isAdmin && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300 rounded px-1.5 py-0.5 shrink-0">
+              <Star className="h-2.5 w-2.5" />ADMIN
+            </span>
+          )}
           <div className="flex items-center gap-1 shrink-0">
             {isSaving
               ? <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-spin" />
@@ -835,7 +883,7 @@ export function BuilderClient({ resumeId, userRole }: Props) {
                   <div className="space-y-2">
                     <Label className="text-xs font-semibold uppercase text-slate-500">Template</Label>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {[
+                      {([
                         { id: "modern",         name: "Modern Sidebar",     plan: "FREE"   },
                         { id: "classic",        name: "Classic Pro",        plan: "FREE"   },
                         { id: "minimal",        name: "Minimal ATS",        plan: "FREE"   },
@@ -853,13 +901,20 @@ export function BuilderClient({ resumeId, userRole }: Props) {
                         { id: "portuguese",     name: "Portuguese CV",      plan: "GLOBAL" },
                         { id: "uae-pro",        name: "UAE Pro",            plan: "GLOBAL" },
                         { id: "euro-card",      name: "EU Blue Card",       plan: "GLOBAL" },
-                      ].map((t) => (
-                        <button key={t.id} onClick={() => setData({ template: t.id })}
-                          className={`border rounded-lg p-1.5 text-center text-[10px] cursor-pointer transition-colors leading-tight ${data.template === t.id ? "border-blue-600 bg-blue-50 text-blue-600 font-semibold" : "hover:bg-slate-50 text-slate-600 border-slate-200"}`}>
-                          <span className="block truncate">{t.name}</span>
-                          <span className={`text-[8px] font-medium ${t.plan === "FREE" ? "text-emerald-600" : t.plan === "PRO" ? "text-indigo-500" : "text-amber-500"}`}>{t.plan}</span>
-                        </button>
-                      ))}
+                      ] as { id: string; name: string; plan: string }[]).map((t) => {
+                        const planColor = isAdmin ? "text-amber-600"
+                          : t.plan === "FREE" ? "text-emerald-600"
+                          : t.plan === "PRO"  ? "text-indigo-500"
+                          : "text-amber-500"
+                        const planLabel = isAdmin ? "ADMIN" : t.plan
+                        return (
+                          <button key={t.id} onClick={() => setData({ template: t.id })}
+                            className={`border rounded-lg p-1.5 text-center text-[10px] cursor-pointer transition-colors leading-tight ${data.template === t.id ? "border-blue-600 bg-blue-50 text-blue-600 font-semibold" : "hover:bg-slate-50 text-slate-600 border-slate-200"}`}>
+                            <span className="block truncate">{t.name}</span>
+                            <span className={`text-[8px] font-medium ${planColor}`}>{planLabel}</span>
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                   {showPhotoUpload && (
@@ -894,6 +949,11 @@ export function BuilderClient({ resumeId, userRole }: Props) {
                         <option key={v} value={v}>{l}{isTranslating && v === data.language ? " (translating…)" : ""}</option>
                       ))}
                     </select>
+                    {data.language !== "en" && (
+                      <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => void handleTranslateAll()} disabled={isTranslating}>
+                        {isTranslating ? <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" />Translating…</> : <><Globe className="h-3 w-3 mr-1.5" />Translate Full Resume</>}
+                      </Button>
+                    )}
                     {isTranslating && <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Translating…</div>}
                   </div>
                   <div className="space-y-2">
@@ -902,8 +962,27 @@ export function BuilderClient({ resumeId, userRole }: Props) {
                       <option value="US">USA</option><option value="DE">Germany</option>
                       <option value="UK">United Kingdom</option><option value="FR">France</option>
                       <option value="JP">Japan</option><option value="CA">Canada</option>
-                      <option value="AU">Australia</option>
+                      <option value="AU">Australia</option><option value="AE">UAE</option>
+                      <option value="ES">Spain</option><option value="PT">Portugal</option>
                     </select>
+                    {(() => {
+                      const hints: Record<string, string> = {
+                        US: "US: ATS-first. Avoid photos. Use bullet-point achievements with metrics.",
+                        CA: "Canada: Similar to US. ATS-safe format. No photo recommended.",
+                        UK: "UK: Concise 2-page CV. No photo needed. Focus on achievements.",
+                        DE: "Germany: Photo expected. Precise dates. Formal tone. 'Lebenslauf' format.",
+                        FR: "France: Photo common. Elegant presentation. Include nationality if required.",
+                        JP: "Japan: Rirekisho format. Compact, formal. Photo required. Exact dates.",
+                        AU: "Australia: ATS-friendly. Key Skills section important. 2–3 pages OK.",
+                        AE: "UAE: Executive presentation. Multilingual a plus. Photo often expected.",
+                        ES: "Spain: Photo common. Formal tone. Include personal details section.",
+                        PT: "Portugal: Similar to Spain. Photo expected. Formal tone.",
+                      }
+                      const hint = hints[data.targetCountry ?? "US"]
+                      return hint ? (
+                        <p className="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded p-2 leading-relaxed">{hint}</p>
+                      ) : null
+                    })()}
                   </div>
                 </div>
               </ScrollArea>

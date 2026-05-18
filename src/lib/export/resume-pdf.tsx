@@ -1,36 +1,25 @@
 /**
- * resume-pdf.tsx
+ * resume-pdf.tsx — Server-side PDF renderer (@react-pdf/renderer)
  *
- * Server-side PDF renderer using @react-pdf/renderer.
- * Called exclusively from /api/resumes/pdf/route.ts via renderToBuffer().
- * Must NOT be imported in any client component or layout.
+ * Design principles:
+ *  - ALL layout uses explicit dimensions — no flexWrap on headers
+ *  - Contact line is a single Text node so it wraps safely
+ *  - URLs stripped to bare hostname+path to prevent overflow
+ *  - AI debug strings sanitized before rendering
+ *  - Font: Helvetica (built-in, zero-latency) for Latin; NotoSans registered
+ *    once per process for CJK (graceful fallback on CDN miss)
+ *  - Watermark + page numbers via fixed-position Text
  *
- * Font strategy:
- *  - Helvetica (standard PDF font) for all Latin scripts — zero overhead, always available
- *  - Times-Roman for Academic template variant
- *  - External NotoSans registered once per process for CJK/Arabic (graceful fallback on failure)
+ * ONLY called from /api/resumes/pdf/route.ts — never imported in any client module.
  */
 
-import React from "react"
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  Image,
-  Font,
-  StyleSheet,
-  Link,
-} from "@react-pdf/renderer"
+import { Document, Page, Text, View, Image, Font, StyleSheet } from "@react-pdf/renderer"
 import type { ResumeData } from "@/store/useResumeStore"
 
-// ── Font registration ─────────────────────────────────────────────────────────
+// ── Font setup ────────────────────────────────────────────────────────────────
 
-// Disable hyphenation — keeps ATS parsers happy
-Font.registerHyphenationCallback((word) => [word])
+Font.registerHyphenationCallback((word) => [word]) // disable hyphenation — ATS-safe
 
-// Noto Sans for full Unicode/CJK — registered once per process lifecycle.
-// Failure is silently caught; Latin content degrades to Helvetica.
 let cjkRegistered = false
 function ensureCJKFont() {
   if (cjkRegistered) return
@@ -43,40 +32,24 @@ function ensureCJKFont() {
         { src: "https://fonts.gstatic.com/s/notosans/v36/o-0IIpQlx3QUlC5A4PNr4AwhQ_yu-Jg.woff2", fontWeight: 700 },
       ],
     })
-  } catch {
-    // Font CDN unreachable — Helvetica fallback is still valid for Latin
-  }
+  } catch { /* CDN unreachable — Helvetica fallback handles Latin */ }
 }
 
-// ── Accent colours per template ───────────────────────────────────────────────
+// ── Accent colours ────────────────────────────────────────────────────────────
 
 const ACCENT: Record<string, string> = {
-  modern: "#3B82F6",
-  classic: "#1E3A5F",
-  minimal: "#374151",
-  "ats-friendly": "#1E40AF",
-  executive: "#1E293B",
-  creative: "#7C3AED",
-  global: "#0F766E",
-  "global-tech": "#0D9488",
-  "consultant-pro": "#D97706",
-  academic: "#374151",
-  german: "#DC2626",
-  french: "#1D4ED8",
-  japanese: "#9F1239",
-  spanish: "#B45309",
-  portuguese: "#15803D",
-  "uae-pro": "#1E3A5F",
-  "euro-card": "#1E3A5F",
+  modern: "#3B82F6", classic: "#1E3A5F", minimal: "#374151",
+  "ats-friendly": "#1E40AF", executive: "#1E293B", creative: "#7C3AED",
+  global: "#0F766E", "global-tech": "#0D9488", "consultant-pro": "#D97706",
+  academic: "#374151", german: "#DC2626", french: "#1D4ED8",
+  japanese: "#9F1239", spanish: "#B45309", portuguese: "#15803D",
+  "uae-pro": "#1E3A5F", "euro-card": "#1E3A5F",
 }
+const accentFor = (t: string) => ACCENT[t] ?? "#3B82F6"
 
-function accentFor(template: string): string {
-  return ACCENT[template] ?? "#3B82F6"
-}
+// ── i18n ──────────────────────────────────────────────────────────────────────
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
-
-const MONTH_NAMES: Record<string, string[]> = {
+const MONTH: Record<string, string[]> = {
   en: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
   de: ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"],
   fr: ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"],
@@ -85,29 +58,11 @@ const MONTH_NAMES: Record<string, string[]> = {
   ja: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"],
   zh: ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"],
 }
-
 const PRESENT: Record<string, string> = {
   en: "Present", de: "Heute", fr: "Aujourd'hui", es: "Actualidad",
   pt: "Atual", ja: "現在", zh: "至今",
 }
-
-function fmtDate(raw: string, lang: string): string {
-  if (!raw) return ""
-  const months = MONTH_NAMES[lang] ?? MONTH_NAMES.en
-  // "YYYY" → year only
-  if (/^\d{4}$/.test(raw)) return raw
-  // "YYYY-MM" or "YYYY-MM-DD"
-  const parts = raw.split("-")
-  if (parts.length >= 2) {
-    const m = parseInt(parts[1], 10) - 1
-    return `${months[m] ?? ""} ${parts[0]}`
-  }
-  return raw
-}
-
-// ── Section heading styles ─────────────────────────────────────────────────────
-
-const HEADINGS: Record<string, Record<string, string>> = {
+const HEADS: Record<string, Record<string, string>> = {
   en: { summary:"Professional Summary", experience:"Work Experience", education:"Education", skills:"Skills", projects:"Projects", certifications:"Certifications", languages:"Languages", portfolio:"Portfolio" },
   de: { summary:"Profil", experience:"Berufserfahrung", education:"Ausbildung", skills:"Fähigkeiten", projects:"Projekte", certifications:"Zertifizierungen", languages:"Sprachen", portfolio:"Portfolio" },
   fr: { summary:"Profil", experience:"Expérience professionnelle", education:"Formation", skills:"Compétences", projects:"Projets", certifications:"Certifications", languages:"Langues", portfolio:"Portfolio" },
@@ -116,83 +71,118 @@ const HEADINGS: Record<string, Record<string, string>> = {
   ja: { summary:"プロフィール", experience:"職務経歴", education:"学歴", skills:"スキル", projects:"プロジェクト", certifications:"資格・認定", languages:"語学", portfolio:"ポートフォリオ" },
   zh: { summary:"个人简介", experience:"工作经历", education:"教育背景", skills:"专业技能", projects:"项目经验", certifications:"证书", languages:"语言能力", portfolio:"作品集" },
 }
-
 function h(lang: string, key: string): string {
-  return (HEADINGS[lang] ?? HEADINGS.en)[key] ?? key
+  return (HEADS[lang] ?? HEADS.en)[key] ?? key
+}
+function fmtDate(raw: string, lang: string): string {
+  if (!raw) return ""
+  const months = MONTH[lang] ?? MONTH.en
+  if (/^\d{4}$/.test(raw)) return raw
+  const parts = raw.split("-")
+  if (parts.length >= 2) return `${months[parseInt(parts[1], 10) - 1] ?? ""} ${parts[0]}`
+  return raw
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Content sanitizer — strips internal debug text before it reaches the PDF ──
 
-function makeStyles(accent: string, useSerif: boolean) {
-  const bodyFont = useSerif ? "Times-Roman" : "Helvetica"
-  const boldFont = useSerif ? "Times-Bold" : "Helvetica-Bold"
+const DEBUG_PATTERNS = [
+  /\s*\(AI rewrite unavailable[^)]*\)/gi,
+  /\s*\(Add OPENAI_API_KEY[^)]*\)/gi,
+  /\s*\[Add OPENAI_API_KEY[^\]]*\]/gi,
+  /\s*\(add OPENAI_API_KEY[^)]*\)/gi,
+]
+function clean(text: string | undefined | null): string {
+  if (!text) return ""
+  let s = text
+  for (const re of DEBUG_PATTERNS) s = s.replace(re, "")
+  return s.trim()
+}
+
+// ── URL display helper — strips scheme + www for compactness ──────────────────
+function displayUrl(url: string): string {
+  return url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")
+}
+
+// ── Style factory ─────────────────────────────────────────────────────────────
+
+function makeStyles(accent: string, serif: boolean) {
+  const body = serif ? "Times-Roman" : "Helvetica"
+  const bold = serif ? "Times-Bold"  : "Helvetica-Bold"
 
   return StyleSheet.create({
+    // ── Page ──
     page: {
-      fontFamily: bodyFont,
-      fontSize: 9,
-      color: "#1F2937",
-      paddingTop: 36,
-      paddingBottom: 48,
-      paddingHorizontal: 40,
-      lineHeight: 1.4,
+      fontFamily: body, fontSize: 9, color: "#1F2937",
+      paddingTop: 40, paddingBottom: 52, paddingHorizontal: 44,
+      lineHeight: 1.45,
     },
-    // Header
-    header: { marginBottom: 14 },
-    headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-    photo: { width: 56, height: 56, borderRadius: 4, objectFit: "cover" },
-    headerText: { flex: 1 },
-    name: { fontFamily: boldFont, fontSize: 20, color: "#111827", letterSpacing: 0.3 },
-    tagline: { fontSize: 10, color: accent, marginTop: 2, marginBottom: 4 },
-    contactRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
-    contactItem: { fontSize: 8, color: "#4B5563" },
-    contactDot: { fontSize: 8, color: "#9CA3AF" },
-    headerDivider: { borderBottomWidth: 2, borderBottomColor: accent, marginTop: 10 },
-    // Section
-    section: { marginTop: 10 },
-    sectionHead: { flexDirection: "row", alignItems: "center", marginBottom: 5 },
-    sectionTitle: { fontFamily: boldFont, fontSize: 9, textTransform: "uppercase", letterSpacing: 0.8, color: "#374151" },
-    sectionLine: { flex: 1, borderBottomWidth: 0.75, borderBottomColor: accent, marginLeft: 6, alignSelf: "center" },
-    // Experience / education items
-    item: { marginBottom: 7 },
-    itemHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-    itemTitle: { fontFamily: boldFont, fontSize: 9.5, color: "#111827" },
-    itemSub: { fontSize: 9, color: accent },
-    itemDate: { fontSize: 8, color: "#6B7280", textAlign: "right" },
-    itemBody: { fontSize: 8.5, color: "#374151", marginTop: 3, lineHeight: 1.5 },
-    // Skills / chips
-    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 2 },
-    chip: { fontSize: 8, color: "#374151", borderWidth: 0.5, borderColor: "#D1D5DB", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
-    // Certification
-    certRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-    certName: { fontFamily: boldFont, fontSize: 9, color: "#111827" },
-    certIssuer: { fontSize: 8, color: accent },
-    certDate: { fontSize: 8, color: "#6B7280" },
-    // Portfolio links
-    linkRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
-    linkLabel: { fontFamily: boldFont, fontSize: 8, color: "#374151" },
-    linkUrl: { fontSize: 8, color: accent },
-    // Watermark
-    watermark: { position: "absolute", bottom: 16, left: 0, right: 0, textAlign: "center", fontSize: 7, color: "#D1D5DB" },
-    // Page number
-    pageNum: { position: "absolute", bottom: 16, right: 40, fontSize: 7, color: "#9CA3AF" },
+
+    // ── Header — stacked column, photo floated left ──────────────────────────
+    // Strategy: headerWrap is a row. photoCol is fixed-width. textCol is flex:1.
+    // Everything inside textCol is a pure column — no flex-wrap on the row itself.
+    headerWrap:   { flexDirection: "row", marginBottom: 12 },
+    photoCol:     { width: 60, marginRight: 14 },
+    photoImg:     { width: 60, height: 60, borderRadius: 3 },
+    textCol:      { flex: 1 },
+    nameText:     { fontFamily: bold, fontSize: 21, color: "#111827", lineHeight: 1.1 },
+    titleText:    { fontSize: 10.5, color: accent, marginTop: 2, lineHeight: 1.2 },
+    contactText:  { fontSize: 8, color: "#4B5563", marginTop: 5, lineHeight: 1.6 },
+    headerRule:   { borderBottomWidth: 2, borderBottomColor: accent, marginTop: 10, marginBottom: 0 },
+
+    // ── Section ──────────────────────────────────────────────────────────────
+    section:      { marginTop: 11 },
+    secHeadRow:   { flexDirection: "row", alignItems: "center", marginBottom: 5 },
+    secTitle:     { fontFamily: bold, fontSize: 8.5, textTransform: "uppercase", letterSpacing: 0.9, color: "#4B5563" },
+    secLine:      { flex: 1, borderBottomWidth: 0.6, borderBottomColor: accent, marginLeft: 7, alignSelf: "center" },
+
+    // ── Experience / Education items ──────────────────────────────────────────
+    item:         { marginBottom: 8 },
+    itemRow:      { flexDirection: "row", justifyContent: "space-between" },
+    itemLeft:     { flex: 1, marginRight: 8 },
+    itemRight:    { flexShrink: 0, maxWidth: 90 },
+    itemTitle:    { fontFamily: bold, fontSize: 9.5, color: "#111827", lineHeight: 1.2 },
+    itemSub:      { fontSize: 8.5, color: accent, marginTop: 1 },
+    itemDate:     { fontSize: 8, color: "#6B7280", textAlign: "right", lineHeight: 1.3 },
+    itemBody:     { fontSize: 8.5, color: "#374151", marginTop: 3, lineHeight: 1.55 },
+
+    // ── Skills chips ──────────────────────────────────────────────────────────
+    chipWrap:     { flexDirection: "row", flexWrap: "wrap", marginTop: 2 },
+    chip:         { fontSize: 8, color: "#374151", borderWidth: 0.4, borderColor: "#D1D5DB", borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2, marginRight: 4, marginBottom: 3 },
+
+    // ── Certifications ────────────────────────────────────────────────────────
+    certRow:      { flexDirection: "row", justifyContent: "space-between", marginBottom: 5 },
+    certLeft:     { flex: 1, marginRight: 8 },
+    certName:     { fontFamily: bold, fontSize: 9, color: "#111827" },
+    certIssuer:   { fontSize: 8, color: accent, marginTop: 1 },
+    certDate:     { fontSize: 8, color: "#6B7280", flexShrink: 0 },
+
+    // ── Portfolio ────────────────────────────────────────────────────────────
+    linkWrap:     { marginBottom: 5 },
+    linkText:     { fontSize: 8, color: "#374151", lineHeight: 1.7 },
+    linkAccent:   { color: accent },
+
+    // ── Footer (watermark + page numbers) ────────────────────────────────────
+    watermark:    { position: "absolute", bottom: 18, left: 44, right: 44, textAlign: "center", fontSize: 6.5, color: "#D1D5DB" },
+    pageNum:      { position: "absolute", bottom: 18, right: 44, fontSize: 7, color: "#9CA3AF" },
   })
 }
 
-// ── Section heading component ─────────────────────────────────────────────────
+// ── Section heading ───────────────────────────────────────────────────────────
 
-function SHead({ title, styles }: { title: string; styles: ReturnType<typeof makeStyles> }) {
+type Styles = ReturnType<typeof makeStyles>
+
+function SHead({ title, s }: { title: string; s: Styles }) {
   return (
-    <View style={styles.sectionHead}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionLine} />
+    <View style={s.secHeadRow}>
+      <Text style={s.secTitle}>{title}</Text>
+      <View style={s.secLine} />
     </View>
   )
 }
 
-// ── Platform labels for portfolio links ───────────────────────────────────────
+// ── Platform label map ────────────────────────────────────────────────────────
 
-const PLATFORM_LABEL: Record<string, string> = {
+const PLAT: Record<string, string> = {
   github: "GitHub", portfolio: "Portfolio", linkedin: "LinkedIn",
   behance: "Behance", dribbble: "Dribbble", medium: "Medium",
   stackoverflow: "Stack Overflow", kaggle: "Kaggle", leetcode: "LeetCode",
@@ -200,7 +190,7 @@ const PLATFORM_LABEL: Record<string, string> = {
   twitter: "Twitter/X", website: "Website", custom: "Link",
 }
 
-// ── Main PDF Document ─────────────────────────────────────────────────────────
+// ── Main document ─────────────────────────────────────────────────────────────
 
 export interface ResumePDFProps {
   data: ResumeData
@@ -208,184 +198,177 @@ export interface ResumePDFProps {
   plan?: string
 }
 
-export function ResumePDF({ data, watermark = false, plan = "FREE" }: ResumePDFProps) {
-  const lang = data.language ?? "en"
-  const accent = accentFor(data.template)
-  const useSerif = data.template === "academic"
-  const styles = makeStyles(accent, useSerif)
-  const presentLabel = PRESENT[lang] ?? "Present"
-
-  const contact = data.contact
+export function ResumePDF({ data, watermark = false }: ResumePDFProps) {
+  const lang     = data.language ?? "en"
+  const accent   = accentFor(data.template)
+  const serif    = data.template === "academic"
+  const s        = makeStyles(accent, serif)
+  const present  = PRESENT[lang] ?? "Present"
+  const contact  = data.contact
   const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ")
-  const hasPhoto = !!contact.photoDataUrl && (
-    contact.photoDataUrl.startsWith("data:image/") ||
-    contact.photoDataUrl.startsWith("http")
+
+  const hasPhoto = !!(
+    contact.photoDataUrl &&
+    (contact.photoDataUrl.startsWith("data:image/") || contact.photoDataUrl.startsWith("http"))
   )
 
-  // Contact items — only non-empty values
-  const contactItems: string[] = [
-    contact.email, contact.phone,
-    [contact.city, contact.country].filter(Boolean).join(", "),
-    contact.linkedin, contact.website,
-  ].filter(Boolean) as string[]
+  // Job title from the most recent experience entry
+  const jobTitle = data.experience[0]?.position ?? ""
 
-  // Portfolio links
-  const portfolioLinks = (data.portfolio?.links ?? []).filter((l) => l.url?.trim())
+  // Contact line — single text, wraps naturally, URLs stripped of scheme
+  const contactParts: string[] = [
+    contact.email,
+    contact.phone,
+    [contact.city, contact.country].filter(Boolean).join(", "),
+    contact.linkedin ? displayUrl(contact.linkedin) : "",
+    contact.website  ? displayUrl(contact.website)  : "",
+    contact.address  ? contact.address               : "",
+  ].filter(Boolean) as string[]
+  const contactLine = contactParts.join("  ·  ")
+
+  // Portfolio
+  const portfolioLinks    = (data.portfolio?.links    ?? []).filter((l) => l.url?.trim())
   const featuredShowcases = (data.portfolio?.showcases ?? []).filter((s) => s.featured && (s.title || s.description))
 
   return (
     <Document
       title={data.title || "Resume"}
-      author={fullName}
+      author={fullName || undefined}
       subject="Resume"
       creator="GlobalResumeAI"
       producer="GlobalResumeAI"
     >
-      <Page size="A4" style={styles.page}>
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            {hasPhoto && (
-              <Image
-                src={contact.photoDataUrl!}
-                style={styles.photo}
-              />
-            )}
-            <View style={styles.headerText}>
-              <Text style={styles.name}>{fullName || "Your Name"}</Text>
-              {data.experience.length > 0 && data.experience[0].position && (
-                <Text style={styles.tagline}>{data.experience[0].position}</Text>
-              )}
-              <View style={styles.contactRow}>
-                {contactItems.map((item, i) => (
-                  <React.Fragment key={i}>
-                    {i > 0 && <Text style={styles.contactDot}>·</Text>}
-                    <Text style={styles.contactItem}>{item}</Text>
-                  </React.Fragment>
-                ))}
-              </View>
+      <Page size="A4" style={s.page}>
+
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <View style={s.headerWrap} fixed={false}>
+          {hasPhoto && (
+            <View style={s.photoCol}>
+              <Image src={contact.photoDataUrl!} style={s.photoImg} />
             </View>
+          )}
+          <View style={s.textCol}>
+            <Text style={s.nameText}>{fullName || "Your Name"}</Text>
+            {jobTitle ? <Text style={s.titleText}>{clean(jobTitle)}</Text> : null}
+            {contactLine ? <Text style={s.contactText}>{contactLine}</Text> : null}
           </View>
-          <View style={styles.headerDivider} />
         </View>
+        <View style={s.headerRule} />
 
-        {/* ── Summary ── */}
+        {/* ── Professional Summary ────────────────────────────────────────── */}
         {data.summary && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "summary")} styles={styles} />
-            <Text style={styles.itemBody}>{data.summary}</Text>
+          <View style={s.section}>
+            <SHead title={h(lang, "summary")} s={s} />
+            <Text style={s.itemBody}>{clean(data.summary)}</Text>
           </View>
         )}
 
-        {/* ── Experience ── */}
+        {/* ── Work Experience ─────────────────────────────────────────────── */}
         {data.experience.length > 0 && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "experience")} styles={styles} />
-            {data.experience.map((exp) => (
-              <View key={exp.id} style={styles.item} wrap={false}>
-                <View style={styles.itemHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.itemTitle}>{exp.position || "Position"}</Text>
-                    <Text style={styles.itemSub}>{exp.company || "Company"}</Text>
+          <View style={s.section}>
+            <SHead title={h(lang, "experience")} s={s} />
+            {data.experience.map((exp) => {
+              const dateStr = [
+                fmtDate(exp.startDate, lang),
+                exp.current ? present : fmtDate(exp.endDate, lang),
+              ].filter(Boolean).join(" – ")
+              return (
+                <View key={exp.id} style={s.item} wrap={false}>
+                  <View style={s.itemRow}>
+                    <View style={s.itemLeft}>
+                      <Text style={s.itemTitle}>{clean(exp.position) || "Position"}</Text>
+                      <Text style={s.itemSub}>{clean(exp.company) || "Company"}</Text>
+                    </View>
+                    {dateStr ? <Text style={s.itemDate}>{dateStr}</Text> : null}
                   </View>
-                  <Text style={styles.itemDate}>
-                    {fmtDate(exp.startDate, lang)}
-                    {(exp.startDate || exp.current || exp.endDate) ? " – " : ""}
-                    {exp.current ? presentLabel : fmtDate(exp.endDate, lang)}
-                  </Text>
+                  {exp.description ? <Text style={s.itemBody}>{clean(exp.description)}</Text> : null}
                 </View>
-                {exp.description && (
-                  <Text style={styles.itemBody}>{exp.description}</Text>
-                )}
-              </View>
-            ))}
+              )
+            })}
           </View>
         )}
 
-        {/* ── Education ── */}
+        {/* ── Education ──────────────────────────────────────────────────── */}
         {data.education.length > 0 && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "education")} styles={styles} />
-            {data.education.map((edu) => (
-              <View key={edu.id} style={styles.item} wrap={false}>
-                <View style={styles.itemHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.itemTitle}>
-                      {[edu.degree, edu.field].filter(Boolean).join(" in ") || "Degree"}
-                    </Text>
-                    <Text style={styles.itemSub}>{edu.institution || "Institution"}</Text>
+          <View style={s.section}>
+            <SHead title={h(lang, "education")} s={s} />
+            {data.education.map((edu) => {
+              const degree = [edu.degree, edu.field].filter(Boolean).join(" in ") || "Degree"
+              const dateStr = [fmtDate(edu.startDate, lang), fmtDate(edu.endDate, lang)].filter(Boolean).join(" – ")
+              return (
+                <View key={edu.id} style={s.item} wrap={false}>
+                  <View style={s.itemRow}>
+                    <View style={s.itemLeft}>
+                      <Text style={s.itemTitle}>{degree}</Text>
+                      <Text style={s.itemSub}>{edu.institution || "Institution"}</Text>
+                    </View>
+                    {dateStr ? <Text style={s.itemDate}>{dateStr}</Text> : null}
                   </View>
-                  {(edu.startDate || edu.endDate) && (
-                    <Text style={styles.itemDate}>
-                      {fmtDate(edu.startDate, lang)}
-                      {edu.endDate ? ` – ${fmtDate(edu.endDate, lang)}` : ""}
-                    </Text>
-                  )}
                 </View>
-              </View>
-            ))}
+              )
+            })}
           </View>
         )}
 
-        {/* ── Skills ── */}
+        {/* ── Skills ─────────────────────────────────────────────────────── */}
         {data.skills.length > 0 && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "skills")} styles={styles} />
-            <View style={styles.chipRow}>
-              {data.skills.map((skill) => (
-                <Text key={skill.id} style={styles.chip}>
-                  {skill.name}{skill.level && skill.level !== "Intermediate" ? ` · ${skill.level}` : ""}
+          <View style={s.section}>
+            <SHead title={h(lang, "skills")} s={s} />
+            <View style={s.chipWrap}>
+              {data.skills.map((sk) => (
+                <Text key={sk.id} style={s.chip}>
+                  {sk.name}{sk.level && sk.level !== "Intermediate" ? ` · ${sk.level}` : ""}
                 </Text>
               ))}
             </View>
           </View>
         )}
 
-        {/* ── Projects ── */}
+        {/* ── Projects ───────────────────────────────────────────────────── */}
         {data.projects && data.projects.length > 0 && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "projects")} styles={styles} />
-            {data.projects.map((proj) => (
-              <View key={proj.id} style={styles.item} wrap={false}>
-                <View style={styles.itemHeader}>
-                  <Text style={styles.itemTitle}>{proj.name || "Project"}</Text>
-                  {(proj.startDate || proj.endDate) && (
-                    <Text style={styles.itemDate}>
-                      {fmtDate(proj.startDate, lang)}
-                      {proj.endDate ? ` – ${fmtDate(proj.endDate, lang)}` : ""}
-                    </Text>
-                  )}
+          <View style={s.section}>
+            <SHead title={h(lang, "projects")} s={s} />
+            {data.projects.map((proj) => {
+              const dateStr = [fmtDate(proj.startDate, lang), fmtDate(proj.endDate, lang)].filter(Boolean).join(" – ")
+              return (
+                <View key={proj.id} style={s.item} wrap={false}>
+                  <View style={s.itemRow}>
+                    <View style={s.itemLeft}>
+                      <Text style={s.itemTitle}>{clean(proj.name) || "Project"}</Text>
+                      {proj.url ? <Text style={s.itemSub}>{displayUrl(proj.url)}</Text> : null}
+                    </View>
+                    {dateStr ? <Text style={s.itemDate}>{dateStr}</Text> : null}
+                  </View>
+                  {proj.description ? <Text style={s.itemBody}>{clean(proj.description)}</Text> : null}
                 </View>
-                {proj.url && <Text style={styles.itemSub}>{proj.url}</Text>}
-                {proj.description && <Text style={styles.itemBody}>{proj.description}</Text>}
-              </View>
-            ))}
+              )
+            })}
           </View>
         )}
 
-        {/* ── Certifications ── */}
+        {/* ── Certifications ─────────────────────────────────────────────── */}
         {data.certifications && data.certifications.length > 0 && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "certifications")} styles={styles} />
+          <View style={s.section}>
+            <SHead title={h(lang, "certifications")} s={s} />
             {data.certifications.map((cert) => (
-              <View key={cert.id} style={styles.certRow} wrap={false}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.certName}>{cert.name || "Certification"}</Text>
-                  {cert.issuer && <Text style={styles.certIssuer}>{cert.issuer}</Text>}
+              <View key={cert.id} style={s.certRow} wrap={false}>
+                <View style={s.certLeft}>
+                  <Text style={s.certName}>{clean(cert.name) || "Certification"}</Text>
+                  {cert.issuer ? <Text style={s.certIssuer}>{clean(cert.issuer)}</Text> : null}
                 </View>
-                {cert.date && <Text style={styles.certDate}>{fmtDate(cert.date, lang)}</Text>}
+                {cert.date ? <Text style={s.certDate}>{fmtDate(cert.date, lang)}</Text> : null}
               </View>
             ))}
           </View>
         )}
 
-        {/* ── Languages ── */}
+        {/* ── Languages ──────────────────────────────────────────────────── */}
         {data.languages && data.languages.length > 0 && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "languages")} styles={styles} />
-            <View style={styles.chipRow}>
+          <View style={s.section}>
+            <SHead title={h(lang, "languages")} s={s} />
+            <View style={s.chipWrap}>
               {data.languages.map((l) => (
-                <Text key={l.id} style={styles.chip}>
+                <Text key={l.id} style={s.chip}>
                   {l.language}{l.proficiency ? ` · ${l.proficiency}` : ""}
                 </Text>
               ))}
@@ -393,55 +376,55 @@ export function ResumePDF({ data, watermark = false, plan = "FREE" }: ResumePDFP
           </View>
         )}
 
-        {/* ── Portfolio ── */}
+        {/* ── Portfolio ───────────────────────────────────────────────────── */}
         {(portfolioLinks.length > 0 || featuredShowcases.length > 0) && (
-          <View style={styles.section}>
-            <SHead title={h(lang, "portfolio")} styles={styles} />
+          <View style={s.section}>
+            <SHead title={h(lang, "portfolio")} s={s} />
 
+            {/* Links as a flowing text line */}
             {portfolioLinks.length > 0 && (
-              <View style={styles.linkRow}>
-                {portfolioLinks.map((l) => (
-                  <View key={l.id} style={{ flexDirection: "row", gap: 3 }}>
-                    <Text style={styles.linkLabel}>{PLATFORM_LABEL[l.platform] ?? l.platform}:</Text>
-                    <Text style={styles.linkUrl}>{l.url.replace(/^https?:\/\//, "")}</Text>
-                  </View>
-                ))}
+              <View style={s.linkWrap}>
+                <Text style={s.linkText}>
+                  {portfolioLinks.map((l, i) => (
+                    `${i > 0 ? "  ·  " : ""}${PLAT[l.platform] ?? l.platform}: ${displayUrl(l.url)}`
+                  )).join("")}
+                </Text>
               </View>
             )}
 
+            {/* Featured showcases */}
             {featuredShowcases.map((sc) => (
-              <View key={sc.id} style={styles.item} wrap={false}>
-                <View style={styles.itemHeader}>
-                  <Text style={styles.itemTitle}>{sc.title || "Project"}</Text>
-                  {sc.role && <Text style={styles.itemDate}>{sc.role}</Text>}
-                </View>
-                {sc.technologies && <Text style={styles.itemSub}>{sc.technologies}</Text>}
-                {sc.description && <Text style={styles.itemBody}>{sc.description}</Text>}
-                {sc.achievements && <Text style={styles.itemBody}>{sc.achievements}</Text>}
-                {(sc.githubUrl || sc.demoUrl) && (
-                  <View style={{ flexDirection: "row", gap: 10, marginTop: 2 }}>
-                    {sc.githubUrl && <Text style={styles.linkUrl}>{sc.githubUrl.replace(/^https?:\/\//, "")}</Text>}
-                    {sc.demoUrl && <Text style={styles.linkUrl}>{sc.demoUrl.replace(/^https?:\/\//, "")}</Text>}
+              <View key={sc.id} style={s.item} wrap={false}>
+                <View style={s.itemRow}>
+                  <View style={s.itemLeft}>
+                    <Text style={s.itemTitle}>{clean(sc.title) || "Project"}</Text>
+                    {sc.technologies ? <Text style={s.itemSub}>{clean(sc.technologies)}</Text> : null}
                   </View>
+                  {sc.role ? <Text style={s.itemDate}>{clean(sc.role)}</Text> : null}
+                </View>
+                {sc.description ? <Text style={s.itemBody}>{clean(sc.description)}</Text> : null}
+                {sc.achievements ? <Text style={s.itemBody}>{clean(sc.achievements)}</Text> : null}
+                {(sc.githubUrl || sc.demoUrl) && (
+                  <Text style={[s.linkText, s.linkAccent]}>
+                    {[sc.githubUrl, sc.demoUrl].filter(Boolean).map(displayUrl).join("  ·  ")}
+                  </Text>
                 )}
               </View>
             ))}
           </View>
         )}
 
-        {/* ── Watermark (free plan) ── */}
+        {/* ── Watermark ──────────────────────────────────────────────────── */}
         {watermark && (
-          <Text style={styles.watermark}>
-            Generated with GlobalResumeAI · Free Plan · Upgrade to remove watermark
+          <Text style={s.watermark} fixed>
+            Generated with GlobalResumeAI · Free Plan · Upgrade to remove this watermark
           </Text>
         )}
 
-        {/* ── Page number ── */}
+        {/* ── Page number ────────────────────────────────────────────────── */}
         <Text
-          style={styles.pageNum}
-          render={({ pageNumber, totalPages }) =>
-            totalPages > 1 ? `${pageNumber} / ${totalPages}` : ""
-          }
+          style={s.pageNum}
+          render={({ pageNumber, totalPages }) => totalPages > 1 ? `${pageNumber} / ${totalPages}` : ""}
           fixed
         />
       </Page>
@@ -449,15 +432,17 @@ export function ResumePDF({ data, watermark = false, plan = "FREE" }: ResumePDFP
   )
 }
 
-// ── Export helper — call from API route only ──────────────────────────────────
+// ── Public export helper — API route only ─────────────────────────────────────
 
-export async function buildResumePDF(data: ResumeData, watermark = false, plan = "FREE"): Promise<Buffer> {
-  // Ensure CJK font is registered for Japanese/Chinese resumes
+export async function buildResumePDF(
+  data: ResumeData,
+  watermark = false,
+  plan = "FREE"
+): Promise<Buffer> {
   const lang = data.language ?? "en"
   if (lang === "ja" || lang === "zh") ensureCJKFont()
 
   const { renderToBuffer } = await import("@react-pdf/renderer")
-  const element = <ResumePDF data={data} watermark={watermark} plan={plan} />
-  const buffer = await renderToBuffer(element)
+  const buffer = await renderToBuffer(<ResumePDF data={data} watermark={watermark} plan={plan} />)
   return buffer
 }

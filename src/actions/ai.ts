@@ -118,7 +118,8 @@ export async function rewriteBullet(
   await requireAIAccess(session.user.id)
 
   if (!aiEnabled) {
-    return `${bullet} (AI rewrite unavailable — add OPENAI_API_KEY to enable)`
+    // Return the original bullet unmodified — never expose internal debug text
+    return bullet
   }
 
   const content = await callOpenAI(
@@ -244,7 +245,9 @@ export async function generateProjectDescription(
   await requireAIAccess(session.user.id)
 
   if (!aiEnabled) {
-    return `${title ? `${title}: ` : ""}Built a production-grade solution using ${technologies || "modern technologies"}, taking ownership as ${role || "lead contributor"}. Delivered measurable impact through careful system design, performance optimization, and cross-functional collaboration. (Add OPENAI_API_KEY to generate a personalized description)`
+    const techPart = technologies ? ` using ${technologies}` : ""
+    const rolePart = role ? `, serving as ${role}` : ""
+    return `${title ? `${title}: ` : ""}Built and delivered a production-grade solution${techPart}${rolePart}. Focused on system design, performance optimization, and cross-functional collaboration to achieve measurable impact.`
   }
 
   const content = await callOpenAI(
@@ -278,7 +281,8 @@ export async function generateLinkedInBio(
   await requireAIAccess(session.user.id)
 
   if (!aiEnabled) {
-    return `${jobTitle} | Passionate about delivering results and driving innovation.\n\n${summary || "Experienced professional with a track record of success."}\n\nCore competencies: ${skills.slice(0, 5).join(" · ") || "Strategic thinking · Leadership · Problem-solving"}\n\nOpen to new opportunities. Let's connect!\n\n(Add OPENAI_API_KEY for a personalized LinkedIn bio)`
+    const topSkills = skills.slice(0, 5).join(" · ") || "Strategic thinking · Leadership · Problem-solving"
+    return `${jobTitle} | Passionate about delivering results and driving innovation.\n\n${summary || "Experienced professional with a track record of success."}\n\nCore competencies: ${topSkills}\n\nOpen to new opportunities. Let's connect!`
   }
 
   const content = await callOpenAI(
@@ -311,7 +315,7 @@ export async function generateCoverLetter(
   await requireAIAccess(session.user.id)
 
   if (!aiEnabled) {
-    return `Dear Hiring Manager,\n\nI am writing to express my interest in the ${jobTitle} position at ${company}. With my background and skills, I am confident I would be a valuable addition to your team.\n\n[Add OPENAI_API_KEY to generate a personalized cover letter]\n\nSincerely,\n[Your Name]`
+    return `Dear Hiring Manager,\n\nI am writing to express my strong interest in the ${jobTitle} position at ${company}. With my professional background and demonstrated expertise, I am confident I would be a valuable addition to your team and contribute meaningfully from day one.\n\n${resumeSummary ? resumeSummary + "\n\n" : ""}I would welcome the opportunity to discuss how my skills and experience align with your needs. Thank you for your time and consideration.\n\nSincerely,\n[Your Name]`
   }
 
   const content = await callOpenAI(
