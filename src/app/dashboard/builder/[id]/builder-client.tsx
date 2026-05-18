@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react"
 import { useResumeStore, type ResumeData } from "@/store/useResumeStore"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -353,7 +353,7 @@ function analyzeResume(
   }
 
   // ── Certifications (10 pts max) ──
-  let cert = Math.min(10, data.certifications.length * 4)
+  const cert = Math.min(10, data.certifications.length * 4)
   if (data.certifications.length === 0) {
     go({ id: "no-certs", priority: "low", section: "certifications", title: "Add certifications (boosts ATS score)", reason: "Certifications add +4 pts each (up to 10) and improve keyword matching for technical and leadership roles.", fix: "Add professional certifications — AWS, Google Cloud, PMP, CISSP, etc.", apply: () => switchSection("certifications") })
   } else if (data.certifications.length < 2) {
@@ -458,7 +458,7 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   const { data, updateContact, setData, addExperience, updateExperience, removeExperience } = useResumeStore()
 
   const [activeSection, setActiveSection] = useState<Section>("contact")
-  const [isMounted,   setIsMounted]   = useState(false)
+  const isMounted = useSyncExternalStore(() => () => {}, () => true, () => false)
   const [isSaving,    setIsSaving]    = useState(false)
   const [lastSaved,   setLastSaved]   = useState<Date | null>(null)
   const [dbResumeId,  setDbResumeId]  = useState<string | null>(resumeId !== "new" ? resumeId : null)
@@ -480,7 +480,6 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   // ── Load resume ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    setIsMounted(true)
     if (resumeId === "new") return
 
     fetch(`/api/resumes/${resumeId}`)
@@ -2133,7 +2132,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
 }) {
   const presentLabel = PRESENT_LABEL[lang] ?? "Present"
 
-  function SHead({ title }: { title: string }) {
+  const sectionHead = (title: string) => {
     if (headingStyle === "MINIMAL")   return <h2 className="text-sm font-semibold text-slate-700 border-b border-slate-200 pb-0.5 mb-2">{title}</h2>
     if (headingStyle === "UPPERCASE") return <h2 className="text-xs font-bold uppercase tracking-widest text-slate-600 border-b border-slate-200 pb-1 mb-2">{title}</h2>
     return <SectionHead title={title} accent={accent} />
@@ -2143,14 +2142,14 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
     <div className="space-y-5">
       {data.summary && (
         <section>
-          <SHead title={h(lang, "summary")} />
+          {sectionHead(h(lang, "summary"))}
           <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{data.summary}</p>
         </section>
       )}
 
       {data.experience.length > 0 && (
         <section>
-          <SHead title={h(lang, "experience")} />
+          {sectionHead(h(lang, "experience"))}
           <div className="space-y-4">
             {data.experience.map((exp) => (
               <div key={exp.id}>
@@ -2176,7 +2175,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
 
       {data.education.length > 0 && (
         <section>
-          <SHead title={h(lang, "education")} />
+          {sectionHead(h(lang, "education"))}
           <div className="space-y-3">
             {data.education.map((edu) => (
               <div key={edu.id} className="flex justify-between items-start">
@@ -2197,7 +2196,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
 
       {!skipSkills && data.skills.length > 0 && (
         <section>
-          <SHead title={h(lang, "skills")} />
+          {sectionHead(h(lang, "skills"))}
           <div className="flex flex-wrap gap-1.5">
             {data.skills.map((skill) => (
               <span key={skill.id} className="text-xs px-2 py-0.5 rounded-full border border-slate-200 text-slate-700">
@@ -2210,7 +2209,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
 
       {data.projects && data.projects.length > 0 && (
         <section>
-          <SHead title={h(lang, "projects")} />
+          {sectionHead(h(lang, "projects"))}
           <div className="space-y-3">
             {data.projects.map((proj) => (
               <div key={proj.id}>
@@ -2234,7 +2233,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
 
       {data.certifications && data.certifications.length > 0 && (
         <section>
-          <SHead title={h(lang, "certifications")} />
+          {sectionHead(h(lang, "certifications"))}
           <div className="space-y-2">
             {data.certifications.map((cert) => (
               <div key={cert.id} className="flex justify-between items-start">
@@ -2251,7 +2250,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
 
       {data.languages && data.languages.length > 0 && (
         <section>
-          <SHead title={h(lang, "languages")} />
+          {sectionHead(h(lang, "languages"))}
           <div className="flex flex-wrap gap-1.5">
             {data.languages.map((l) => (
               <span key={l.id} className="text-xs px-2 py-0.5 rounded-full border border-slate-200 text-slate-700">
@@ -2274,7 +2273,7 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
         }
         return (
           <section>
-            <SHead title={h(lang, "portfolio")} />
+            {sectionHead(h(lang, "portfolio"))}
             {links.length > 0 && (
               <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
                 {links.map((l) => (

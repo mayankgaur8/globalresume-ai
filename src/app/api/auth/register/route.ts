@@ -126,7 +126,7 @@ export async function POST(req: Request) {
       prisma.user.findUnique({ where: { email: normalizedEmail } })
     )
     if (existing) {
-      return errorResponse("An account with this email already exists", 409, "EMAIL_EXISTS")
+      return errorResponse("Email already exists", 409, "EMAIL_EXISTS")
     }
 
     const hashedPassword = await bcrypt.hash(password, 12)
@@ -167,7 +167,7 @@ export async function POST(req: Request) {
     })}`)
 
     if (isPrismaKnownError(err) && err.code === "P2002") {
-      return errorResponse("An account with this email already exists", 409, "EMAIL_EXISTS")
+      return errorResponse("Email already exists", 409, "EMAIL_EXISTS")
     }
 
     if (isTransientDbError(err)) {
