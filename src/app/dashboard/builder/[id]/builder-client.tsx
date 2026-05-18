@@ -468,6 +468,7 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   const [zoom, setZoom]               = useState(100)
   const [leftTab, setLeftTab]         = useState<"sections" | "design" | "ai">("sections")
   const [isTranslating, setIsTranslating] = useState(false)
+  const [isPdfLoading, setIsPdfLoading]   = useState(false)
 
   // Photo management
   const photoInputRef = useRef<HTMLInputElement>(null)
@@ -650,18 +651,54 @@ export function BuilderClient({ resumeId, userRole }: Props) {
   // ── PDF download ─────────────────────────────────────────────────────────────
 
   const handleDownloadPDF = async () => {
-    const res = await fetch("/api/resumes/pdf", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resumeData: data, watermark: userRole !== "ADMIN" }),
-    })
-    if (res.ok) {
+    if (isPdfLoading) return
+    setIsPdfLoading(true)
+    toast("Preparing your PDF…", "info")
+    try {
+      const res = await fetch("/api/resumes/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resumeData: data }),
+      })
+
+      if (res.status === 429) {
+        toast("Too many exports. Please wait a moment and try again.", "error")
+        return
+      }
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "")
+        toast(msg || "PDF generation failed. Please try again.", "error")
+        return
+      }
+
+      const contentType = res.headers.get("Content-Type") ?? ""
+      if (!contentType.includes("application/pdf")) {
+        toast("Server returned an invalid file type. Please try again.", "error")
+        return
+      }
+
       const blob = await res.blob()
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement("a")
-      a.href = url
-      a.download = `${data.contact.firstName || "resume"}_${data.contact.lastName || ""}_Resume.pdf`
+      if (blob.size < 512) {
+        toast("Generated PDF appears empty. Please try again.", "error")
+        return
+      }
+
+      const url = URL.createObjectURL(blob)
+      const a   = document.createElement("a")
+      a.href    = url
+      const firstName = data.contact.firstName || ""
+      const lastName  = data.contact.lastName  || ""
+      a.download = `${[firstName, lastName].filter(Boolean).join("_") || "Resume"}_Resume.pdf`
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
+      toast("PDF downloaded successfully", "success")
+    } catch (err) {
+      console.error("[handleDownloadPDF]", err)
+      toast("PDF download failed. Check your connection and try again.", "error")
+    } finally {
+      setIsPdfLoading(false)
     }
   }
 
@@ -723,8 +760,15 @@ export function BuilderClient({ resumeId, userRole }: Props) {
           <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hidden sm:flex" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hidden sm:flex"><Mail className="h-4 w-4" /></Button>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500"><MoreHorizontal className="h-4 w-4" /></Button>
-          <Button className="bg-blue-600 hover:bg-blue-700 h-8 px-3 text-xs font-semibold" onClick={() => void handleDownloadPDF()}>
-            <Download className="h-3.5 w-3.5 mr-1.5" />Download
+          <Button
+            className="bg-blue-600 hover:bg-blue-700 h-8 px-3 text-xs font-semibold disabled:opacity-70"
+            onClick={() => void handleDownloadPDF()}
+            disabled={isPdfLoading}
+          >
+            {isPdfLoading
+              ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Generating…</>
+              : <><Download className="h-3.5 w-3.5 mr-1.5" />Download PDF</>
+            }
           </Button>
           <Link href="/dashboard/resumes">
             <Button className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3 text-xs font-semibold hidden md:flex">Finish</Button>
