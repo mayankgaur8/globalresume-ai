@@ -25,7 +25,9 @@ type WizardStep = "experience" | "template" | "upload" | "parsing" | "review" | 
 type UploadMode = "file" | "paste"
 type ReviewTab = "contact" | "summary" | "experience" | "education" | "skills" | "aicoach"
 
-interface TemplateFilter { style: string; columns: string; language: string }
+type FilterTag = "all" | "free" | "ats-safe" | "with-photo" | "no-photo" | "one-col" | "two-col" | "tech" | "europe" | "creative" | "academic" | "executive" | "pro" | "global"
+
+interface TemplateFilter { activeTag: FilterTag; language: string }
 
 interface ContactInfo {
   firstName: string; lastName: string; profession: string
@@ -48,34 +50,44 @@ const PARSE_STAGES: ParseProgress[] = [
 // ── Template Data ─────────────────────────────────────────────────────────────
 
 const TEMPLATES = [
-  { id: "modern",       name: "Modern Sidebar",         style: "Contemporary", columns: "2", recommended: ["lt3", "3to5"],              plan: "FREE"   },
-  { id: "classic",      name: "Classic Professional",   style: "Traditional",  columns: "1", recommended: ["3to5", "5to10", "gt10"],    plan: "FREE"   },
-  { id: "executive",    name: "Executive Premium",      style: "Traditional",  columns: "1", recommended: ["5to10", "gt10"],            plan: "PRO"    },
-  { id: "minimal",      name: "Minimal ATS",            style: "Contemporary", columns: "1", recommended: ["none", "lt3", "3to5", "5to10", "gt10"], plan: "FREE" },
-  { id: "creative",     name: "Creative Accent",        style: "Creative",     columns: "2", recommended: ["none", "lt3", "3to5"],      plan: "PRO"    },
-  { id: "ats-friendly", name: "ATS Friendly",           style: "Traditional",  columns: "1", recommended: ["none", "lt3", "3to5", "5to10", "gt10"], plan: "FREE" },
-  { id: "german",       name: "German Lebenslauf",      style: "Traditional",  columns: "1", recommended: ["5to10", "gt10"],            plan: "GLOBAL" },
-  { id: "french",       name: "French CV",              style: "Traditional",  columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL" },
-  { id: "japanese",     name: "Japanese Rirekisho",     style: "Traditional",  columns: "1", recommended: ["3to5", "5to10", "gt10"],    plan: "GLOBAL" },
-  { id: "spanish",      name: "Spanish CV",             style: "Contemporary", columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL" },
-  { id: "portuguese",   name: "Portuguese CV",          style: "Contemporary", columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL" },
-  { id: "global",       name: "Global Professional",    style: "Contemporary", columns: "1", recommended: ["5to10", "gt10"],            plan: "PRO"    },
+  { id: "modern",          name: "Modern Sidebar",       style: "Contemporary", columns: "2", recommended: ["lt3", "3to5"],              plan: "FREE",   tags: ["free", "two-col"]                            as FilterTag[] },
+  { id: "classic",         name: "Classic Professional", style: "Traditional",  columns: "1", recommended: ["3to5", "5to10", "gt10"],    plan: "FREE",   tags: ["free", "ats-safe", "one-col", "no-photo"]    as FilterTag[] },
+  { id: "minimal",         name: "Minimal ATS",          style: "Contemporary", columns: "1", recommended: ["none", "lt3", "3to5", "5to10", "gt10"], plan: "FREE", tags: ["free", "ats-safe", "one-col", "no-photo"] as FilterTag[] },
+  { id: "ats-friendly",    name: "ATS Friendly",         style: "Traditional",  columns: "1", recommended: ["none", "lt3", "3to5", "5to10", "gt10"], plan: "FREE", tags: ["free", "ats-safe", "one-col", "no-photo"] as FilterTag[] },
+  { id: "executive",       name: "Executive Premium",    style: "Traditional",  columns: "1", recommended: ["5to10", "gt10"],            plan: "PRO",    tags: ["pro", "executive", "one-col", "no-photo"]    as FilterTag[] },
+  { id: "creative",        name: "Creative Accent",      style: "Creative",     columns: "2", recommended: ["none", "lt3", "3to5"],      plan: "PRO",    tags: ["pro", "creative", "two-col", "with-photo"]   as FilterTag[] },
+  { id: "global",          name: "Global Professional",  style: "Contemporary", columns: "1", recommended: ["5to10", "gt10"],            plan: "PRO",    tags: ["pro", "one-col", "no-photo"]                 as FilterTag[] },
+  { id: "global-tech",     name: "Global Tech",          style: "Contemporary", columns: "2", recommended: ["lt3", "3to5", "5to10"],     plan: "PRO",    tags: ["pro", "tech", "two-col", "no-photo"]         as FilterTag[] },
+  { id: "consultant-pro",  name: "Consultant Pro",       style: "Traditional",  columns: "1", recommended: ["5to10", "gt10"],            plan: "PRO",    tags: ["pro", "executive", "one-col", "no-photo"]    as FilterTag[] },
+  { id: "academic",        name: "Academic CV",          style: "Traditional",  columns: "1", recommended: ["3to5", "5to10", "gt10"],    plan: "PRO",    tags: ["pro", "academic", "one-col", "no-photo"]     as FilterTag[] },
+  { id: "german",          name: "German Lebenslauf",    style: "Traditional",  columns: "1", recommended: ["5to10", "gt10"],            plan: "GLOBAL", tags: ["global", "europe", "one-col", "with-photo"]  as FilterTag[] },
+  { id: "french",          name: "French CV",            style: "Traditional",  columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL", tags: ["global", "europe", "two-col", "with-photo"]  as FilterTag[] },
+  { id: "japanese",        name: "Japanese Rirekisho",   style: "Traditional",  columns: "1", recommended: ["3to5", "5to10", "gt10"],    plan: "GLOBAL", tags: ["global", "one-col", "with-photo"]             as FilterTag[] },
+  { id: "spanish",         name: "Spanish CV",           style: "Contemporary", columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL", tags: ["global", "europe", "two-col", "with-photo"]  as FilterTag[] },
+  { id: "portuguese",      name: "Portuguese CV",        style: "Contemporary", columns: "2", recommended: ["3to5", "5to10"],            plan: "GLOBAL", tags: ["global", "two-col", "with-photo"]             as FilterTag[] },
+  { id: "uae-pro",         name: "UAE Professional",     style: "Contemporary", columns: "1", recommended: ["3to5", "5to10"],            plan: "GLOBAL", tags: ["global", "one-col", "with-photo"]             as FilterTag[] },
+  { id: "euro-card",       name: "EU Blue Card",         style: "Traditional",  columns: "1", recommended: ["3to5", "5to10", "gt10"],    plan: "GLOBAL", tags: ["global", "europe", "ats-safe", "one-col", "no-photo"] as FilterTag[] },
 ]
 
 // ATS safety tiers per template
 const TEMPLATE_ATS_SAFETY: Record<string, "safe" | "friendly" | "not-safe"> = {
-  minimal:       "safe",
-  "ats-friendly": "safe",
-  classic:       "safe",
-  modern:        "friendly",
-  executive:     "friendly",
-  global:        "friendly",
-  french:        "friendly",
-  portuguese:    "friendly",
-  spanish:       "friendly",
-  japanese:      "friendly",
-  german:        "friendly",
-  creative:      "not-safe",
+  minimal:          "safe",
+  "ats-friendly":   "safe",
+  classic:          "safe",
+  "euro-card":      "safe",
+  modern:           "friendly",
+  executive:        "friendly",
+  global:           "friendly",
+  "global-tech":    "friendly",
+  "consultant-pro": "friendly",
+  academic:         "friendly",
+  french:           "friendly",
+  portuguese:       "friendly",
+  spanish:          "friendly",
+  "uae-pro":        "friendly",
+  japanese:         "friendly",
+  german:           "friendly",
+  creative:         "not-safe",
 }
 
 const TEMPLATE_COUNTRY: Record<string, string> = {
@@ -84,9 +96,11 @@ const TEMPLATE_COUNTRY: Record<string, string> = {
   japanese:   "JP",
   spanish:    "ES/LATAM",
   portuguese: "PT/BR",
+  "uae-pro":  "UAE/GCC",
+  "euro-card":"EU",
 }
 
-const PHOTO_TEMPLATES = new Set(["german", "french", "japanese", "creative"])
+const PHOTO_TEMPLATES = new Set(["german", "french", "japanese", "creative", "spanish", "portuguese", "uae-pro"])
 
 const QUICK_DEGREES: { label: string; degree: string; field: string }[] = [
   { label: "B.Tech / BE",   degree: "Bachelor of Technology",           field: "Engineering"          },
@@ -114,18 +128,23 @@ const LANGUAGES = ["English", "German", "French", "Japanese", "Chinese", "Spanis
 
 function TemplateSVG({ templateId }: { templateId: string }) {
   const configs: Record<string, { accent: string; header: string; bg: string; sidebar?: boolean }> = {
-    modern:       { accent: "#3B82F6", header: "#1E3A5F", bg: "#EFF6FF", sidebar: true },
-    classic:      { accent: "#374151", header: "#111827", bg: "#F9FAFB" },
-    executive:    { accent: "#D97706", header: "#0F172A", bg: "#FFFBEB" },
-    minimal:      { accent: "#94A3B8", header: "#334155", bg: "#F8FAFC" },
-    creative:     { accent: "#EC4899", header: "#831843", bg: "#FDF4FF", sidebar: true },
-    "ats-friendly":{ accent: "#1F2937", header: "#111827", bg: "#FFFFFF" },
-    german:       { accent: "#DC2626", header: "#1F2937", bg: "#FEF2F2" },
-    french:       { accent: "#2563EB", header: "#1E3A8A", bg: "#EFF6FF", sidebar: true },
-    japanese:     { accent: "#DC2626", header: "#991B1B", bg: "#FFF1F2" },
-    spanish:      { accent: "#C2410C", header: "#7C2D12", bg: "#FFF7ED" },
-    portuguese:   { accent: "#166534", header: "#14532D", bg: "#F0FDF4" },
-    global:       { accent: "#7C3AED", header: "#4C1D95", bg: "#F5F3FF" },
+    modern:           { accent: "#3B82F6", header: "#1E3A5F", bg: "#EFF6FF", sidebar: true },
+    classic:          { accent: "#374151", header: "#111827", bg: "#F9FAFB" },
+    executive:        { accent: "#D97706", header: "#0F172A", bg: "#FFFBEB" },
+    minimal:          { accent: "#94A3B8", header: "#334155", bg: "#F8FAFC" },
+    creative:         { accent: "#EC4899", header: "#831843", bg: "#FDF4FF", sidebar: true },
+    "ats-friendly":   { accent: "#1F2937", header: "#111827", bg: "#FFFFFF" },
+    german:           { accent: "#DC2626", header: "#1F2937", bg: "#FEF2F2" },
+    french:           { accent: "#2563EB", header: "#1E3A8A", bg: "#EFF6FF", sidebar: true },
+    japanese:         { accent: "#DC2626", header: "#991B1B", bg: "#FFF1F2" },
+    spanish:          { accent: "#C2410C", header: "#7C2D12", bg: "#FFF7ED", sidebar: true },
+    portuguese:       { accent: "#166534", header: "#14532D", bg: "#F0FDF4", sidebar: true },
+    global:           { accent: "#7C3AED", header: "#4C1D95", bg: "#F5F3FF" },
+    "global-tech":    { accent: "#0D9488", header: "#134E4A", bg: "#F0FDFA", sidebar: true },
+    "consultant-pro": { accent: "#D97706", header: "#1C1917", bg: "#FFFBEB" },
+    academic:         { accent: "#4B5563", header: "#1F2937", bg: "#F9FAFB" },
+    "uae-pro":        { accent: "#0369A1", header: "#1E3A5F", bg: "#EFF6FF" },
+    "euro-card":      { accent: "#1D4ED8", header: "#1E3A8A", bg: "#EFF6FF" },
   }
   const c = configs[templateId] ?? configs.modern
   const hasPhoto = PHOTO_TEMPLATES.has(templateId)
@@ -484,9 +503,90 @@ const WIZARD_STEPS = [
   { id: "contact",    label: "Contact",    icon: <User       className="h-4 w-4" /> },
 ]
 
+// ── Upgrade Modal ─────────────────────────────────────────────────────────────
+
+function UpgradeModal({ plan, onClose }: { plan: "PRO" | "GLOBAL"; onClose: () => void }) {
+  const PLAN_FEATURES = {
+    PRO: {
+      name: "Pro",
+      price: "$15/mo",
+      color: "text-indigo-600",
+      bg: "bg-indigo-600",
+      border: "border-indigo-200",
+      features: [
+        "Unlimited resumes",
+        "8 Pro templates (Executive, Creative, Consultant, Tech…)",
+        "AI resume coach + rewrites",
+        "No watermark on exports",
+        "Priority PDF export",
+      ],
+    },
+    GLOBAL: {
+      name: "Global",
+      price: "$29/mo",
+      color: "text-amber-600",
+      bg: "bg-amber-500",
+      border: "border-amber-200",
+      features: [
+        "Everything in Pro",
+        "All 17+ templates including region-specific",
+        "All languages (German, French, Japanese…)",
+        "German Lebenslauf, French CV, UAE format",
+        "EU Blue Card & visa-ready formats",
+      ],
+    },
+  }
+
+  const pro = PLAN_FEATURES.PRO
+  const global = PLAN_FEATURES.GLOBAL
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Unlock Premium Templates</h2>
+            <p className="text-sm text-slate-500 mt-0.5">Choose a plan to access all templates</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="p-6 grid grid-cols-2 gap-4">
+          {([pro, global] as typeof pro[]).map((p) => {
+            const isHighlighted = p.name === (plan === "GLOBAL" ? "Global" : "Pro")
+            return (
+              <div key={p.name} className={cn("rounded-xl border-2 p-4 space-y-3 transition-all", isHighlighted ? `${p.border} bg-slate-50` : "border-slate-200")}>
+                <div>
+                  <div className={cn("text-xs font-bold uppercase tracking-wider mb-1", p.color)}>{p.name}</div>
+                  <div className="text-2xl font-bold text-slate-900">{p.price}</div>
+                </div>
+                <ul className="space-y-1.5">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex gap-2 text-xs text-slate-700">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />{f}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  className={cn("w-full h-8 text-xs font-bold", isHighlighted ? `${p.bg} hover:opacity-90 text-white` : "bg-slate-100 text-slate-700 hover:bg-slate-200")}
+                  onClick={() => { window.location.href = "/dashboard/settings#billing" }}
+                >
+                  {isHighlighted ? `Upgrade to ${p.name}` : `Get ${p.name}`}
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+        <div className="px-6 pb-5 text-center text-xs text-slate-400">
+          You can still preview any template — upgrade to use it when creating.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Wizard ───────────────────────────────────────────────────────────────
 
-export function CreateWizard() {
+export function CreateWizard({ userPlan = "FREE" }: { userPlan?: string }) {
   const router = useRouter()
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -494,7 +594,9 @@ export function CreateWizard() {
   const [step, setStep] = useState<WizardStep>("experience")
   const [experience, setExperience] = useState<ExperienceLevel | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState("modern")
-  const [filters, setFilters] = useState<TemplateFilter>({ style: "Any", columns: "Any", language: "English" })
+  const [filters, setFilters] = useState<TemplateFilter>({ activeTag: "all", language: "English" })
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradePlan, setUpgradePlan] = useState<"PRO" | "GLOBAL">("PRO")
 
   // Upload state
   const [uploadMode, setUploadMode] = useState<UploadMode>("file")
@@ -526,9 +628,15 @@ export function CreateWizard() {
     s.id === step || (step === "parsing" && s.id === "upload") || (step === "review" && s.id === "upload")
   )
 
+  const canUseTemplate = (plan: string) => {
+    if (userPlan === "ADMIN" || userPlan === "GLOBAL") return true
+    if (plan === "FREE") return true
+    if (plan === "PRO" && (userPlan === "PRO" || userPlan === "BASIC")) return true
+    return false
+  }
+
   const filteredTemplates = TEMPLATES.filter((t) => {
-    if (filters.style !== "Any" && t.style !== filters.style) return false
-    if (filters.columns !== "Any" && t.columns !== filters.columns) return false
+    if (filters.activeTag !== "all" && !t.tags.includes(filters.activeTag)) return false
     return true
   })
 
@@ -917,51 +1025,90 @@ export function CreateWizard() {
           {/* ── Step 2: Template ── */}
           {step === "template" && (
             <div>
+              {showUpgradeModal && (
+                <UpgradeModal plan={upgradePlan} onClose={() => setShowUpgradeModal(false)} />
+              )}
               <div className="text-center mb-6">
                 <h1 className="text-2xl lg:text-3xl font-bold text-slate-900">Choose your template</h1>
-                <p className="text-slate-500 mt-2">You can change this later in the builder.</p>
+                <p className="text-slate-500 mt-2">You can change this later in the builder. Free plan: 4 templates included.</p>
               </div>
-              {/* Filters */}
-              <div className="flex flex-wrap gap-3 mb-6 bg-white p-4 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Style:</Label>
-                  <div className="flex gap-1">
-                    {["Any", "Traditional", "Contemporary", "Creative"].map((s) => (
-                      <button key={s} onClick={() => setFilters((f) => ({ ...f, style: s }))}
-                        className={cn("px-2.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                          filters.style === s ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>
-                        {s}
-                      </button>
-                    ))}
+              {/* Filter chips */}
+              <div className="mb-5 space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {([
+                    { id: "all",        label: "All" },
+                    { id: "free",       label: "Free" },
+                    { id: "ats-safe",   label: "ATS Safe" },
+                    { id: "no-photo",   label: "No Photo" },
+                    { id: "with-photo", label: "With Photo" },
+                    { id: "one-col",    label: "1 Column" },
+                    { id: "two-col",    label: "2 Columns" },
+                    { id: "executive",  label: "Executive" },
+                    { id: "tech",       label: "Tech" },
+                    { id: "europe",     label: "Europe" },
+                    { id: "creative",   label: "Creative" },
+                    { id: "academic",   label: "Academic" },
+                    { id: "pro",        label: "Pro" },
+                    { id: "global",     label: "Global" },
+                  ] as { id: FilterTag; label: string }[]).map((chip) => (
+                    <button key={chip.id}
+                      onClick={() => setFilters((f) => ({ ...f, activeTag: chip.id }))}
+                      className={cn(
+                        "px-3 py-1 rounded-full text-xs font-medium transition-colors border",
+                        filters.activeTag === chip.id
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600"
+                      )}>
+                      {chip.label}
+                    </button>
+                  ))}
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Label className="text-xs text-slate-500 whitespace-nowrap">Language:</Label>
+                    <select value={filters.language}
+                      onChange={(e) => setFilters((f) => ({ ...f, language: e.target.value }))}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white h-7">
+                      {LANGUAGES.map((l) => <option key={l}>{l}</option>)}
+                    </select>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Columns:</Label>
-                  <div className="flex gap-1">
-                    {["Any", "1", "2"].map((c) => (
-                      <button key={c} onClick={() => setFilters((f) => ({ ...f, columns: c }))}
-                        className={cn("px-2.5 py-1 rounded-lg text-xs font-medium transition-colors",
-                          filters.columns === c ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>
-                        {c === "Any" ? "Any" : `${c} col`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs font-semibold text-slate-600 whitespace-nowrap">Language:</Label>
-                  <select value={filters.language}
-                    onChange={(e) => setFilters((f) => ({ ...f, language: e.target.value }))}
-                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white">
-                    {LANGUAGES.map((l) => <option key={l}>{l}</option>)}
-                  </select>
-                </div>
+                <p className="text-xs text-slate-400">{filteredTemplates.length} template{filteredTemplates.length !== 1 ? "s" : ""} shown</p>
               </div>
+
+              {/* Upgrade notice */}
+              {!canUseTemplate(TEMPLATES.find((t) => t.id === selectedTemplate)?.plan ?? "FREE") && (
+                <div className="mb-4 flex items-center gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3">
+                  <Zap className="h-4 w-4 text-indigo-600 shrink-0" />
+                  <p className="text-sm text-indigo-800 flex-1">
+                    <span className="font-semibold">{TEMPLATES.find((t) => t.id === selectedTemplate)?.name}</span> requires the{" "}
+                    <span className="font-semibold">{TEMPLATES.find((t) => t.id === selectedTemplate)?.plan}</span> plan.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const plan = TEMPLATES.find((t) => t.id === selectedTemplate)?.plan
+                      setUpgradePlan(plan === "GLOBAL" ? "GLOBAL" : "PRO")
+                      setShowUpgradeModal(true)
+                    }}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
+                  >
+                    View Plans →
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredTemplates.map((t) => {
                   const isRec = experience && t.recommended.includes(experience)
                   const isSelected = selectedTemplate === t.id
+                  const isLocked = !canUseTemplate(t.plan)
                   return (
-                    <button key={t.id} onClick={() => setSelectedTemplate(t.id)}
+                    <button key={t.id}
+                      onClick={() => {
+                        setSelectedTemplate(t.id)
+                        if (isLocked) {
+                          setUpgradePlan(t.plan === "GLOBAL" ? "GLOBAL" : "PRO")
+                          setShowUpgradeModal(true)
+                        }
+                      }}
                       className={cn(
                         "group relative rounded-xl border-2 overflow-hidden text-left transition-all",
                         isSelected ? "border-blue-500 shadow-lg" : "border-slate-200 hover:border-blue-300 hover:shadow-md"
@@ -972,12 +1119,16 @@ export function CreateWizard() {
                         </div>
                       )}
                       {t.plan !== "FREE" && (
-                        <div className={cn("absolute top-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full",
-                          t.plan === "PRO" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700")}>
+                        <div className={cn("absolute top-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5",
+                          t.plan === "GLOBAL" ? "bg-amber-100 text-amber-700" : "bg-indigo-100 text-indigo-700")}>
+                          {isLocked && <span className="text-[9px]">🔒</span>}
                           {t.plan}
                         </div>
                       )}
-                      {isSelected && (
+                      {isLocked && (
+                        <div className="absolute inset-0 bg-slate-900/10 pointer-events-none" />
+                      )}
+                      {isSelected && !isLocked && (
                         <div className="absolute bottom-2 right-2 z-10 h-5 w-5 bg-blue-600 rounded-full flex items-center justify-center">
                           <Check className="h-3 w-3 text-white" />
                         </div>

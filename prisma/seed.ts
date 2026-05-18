@@ -23,18 +23,26 @@ async function main() {
 
   // 2. Create Templates
   const templates = [
-    { name: 'Modern', isPremium: false },
-    { name: 'Classic', isPremium: true },
-    { name: 'Executive', isPremium: true },
-    { name: 'Minimal', isPremium: true },
-    { name: 'Creative', isPremium: true },
-    { name: 'ATS Friendly', isPremium: true },
-    { name: 'European CV', isPremium: true },
-    { name: 'German Lebenslauf', isPremium: true },
-    { name: 'French CV', isPremium: true },
-    { name: 'Japanese Rirekisho', isPremium: true },
-    { name: 'Spanish CV', isPremium: true },
-    { name: 'Portuguese CV', isPremium: true },
+    // FREE templates
+    { name: 'modern',         isPremium: false },
+    { name: 'classic',        isPremium: false },
+    { name: 'minimal',        isPremium: false },
+    { name: 'ats-friendly',   isPremium: false },
+    // PRO templates
+    { name: 'executive',      isPremium: true  },
+    { name: 'creative',       isPremium: true  },
+    { name: 'global',         isPremium: true  },
+    { name: 'global-tech',    isPremium: true  },
+    { name: 'consultant-pro', isPremium: true  },
+    { name: 'academic',       isPremium: true  },
+    // GLOBAL templates
+    { name: 'german',         isPremium: true  },
+    { name: 'french',         isPremium: true  },
+    { name: 'japanese',       isPremium: true  },
+    { name: 'spanish',        isPremium: true  },
+    { name: 'portuguese',     isPremium: true  },
+    { name: 'uae-pro',        isPremium: true  },
+    { name: 'euro-card',      isPremium: true  },
   ]
 
   for (const t of templates) {

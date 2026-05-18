@@ -67,8 +67,8 @@ const PRESENT_LABEL: Record<string, string> = {
   pt: "Atual", ja: "現在", zh: "至今",
 }
 
-const PHOTO_TEMPLATES  = new Set(["german", "french", "japanese", "creative"])
-const SIDEBAR_TEMPLATES = new Set(["modern", "creative", "french", "global"])
+const PHOTO_TEMPLATES  = new Set(["german", "french", "japanese", "creative", "spanish", "portuguese", "uae-pro"])
+const SIDEBAR_TEMPLATES = new Set(["modern", "creative", "french", "global", "global-tech", "spanish", "portuguese"])
 
 // ── Date formatting ───────────────────────────────────────────────────────────
 
@@ -356,7 +356,6 @@ function analyzeResume(
   }
 
   // ── Photo / template ──
-  const isATSSafe = data.template === "classic" || data.template === "minimal"
   if (PHOTO_TEMPLATES.has(data.template) && data.contact.photoDataUrl && (data.targetCountry === "US" || data.targetCountry === "UK" || data.targetCountry === "CA")) {
     go({ id: "photo-bias", priority: "medium", section: "contact", title: "Photo may reduce ATS score in US/UK/CA", reason: "US, UK, and Canadian employers are legally required to avoid bias — photos can trigger rejections.", fix: "Remove photo or switch to Classic (ATS-safe) template.", applyLabel: "Switch to Classic", apply: () => setData({ template: "classic" }) })
   }
@@ -703,12 +702,30 @@ export function BuilderClient({ resumeId, userRole }: Props) {
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <Label className="text-xs font-semibold uppercase text-slate-500">Template</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {["modern", "classic", "minimal", "executive", "german", "french"].map((t) => (
-                        <button key={t} onClick={() => setData({ template: t })}
-                          className={`border rounded-lg p-2 text-center text-xs cursor-pointer capitalize transition-colors ${data.template === t ? "border-blue-600 bg-blue-50 text-blue-600 font-medium" : "hover:bg-slate-50 text-slate-600"}`}>
-                          {t}
-                          {(t === "classic" || t === "minimal") && <span className="block text-[9px] text-emerald-600 font-normal">ATS-safe</span>}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { id: "modern",         name: "Modern Sidebar",     plan: "FREE"   },
+                        { id: "classic",        name: "Classic Pro",        plan: "FREE"   },
+                        { id: "minimal",        name: "Minimal ATS",        plan: "FREE"   },
+                        { id: "ats-friendly",   name: "ATS Friendly",       plan: "FREE"   },
+                        { id: "executive",      name: "Executive",          plan: "PRO"    },
+                        { id: "creative",       name: "Creative Accent",    plan: "PRO"    },
+                        { id: "global",         name: "Global Pro",         plan: "PRO"    },
+                        { id: "global-tech",    name: "Global Tech",        plan: "PRO"    },
+                        { id: "consultant-pro", name: "Consultant Pro",     plan: "PRO"    },
+                        { id: "academic",       name: "Academic CV",        plan: "PRO"    },
+                        { id: "german",         name: "German",             plan: "GLOBAL" },
+                        { id: "french",         name: "French CV",          plan: "GLOBAL" },
+                        { id: "japanese",       name: "Japanese",           plan: "GLOBAL" },
+                        { id: "spanish",        name: "Spanish CV",         plan: "GLOBAL" },
+                        { id: "portuguese",     name: "Portuguese CV",      plan: "GLOBAL" },
+                        { id: "uae-pro",        name: "UAE Pro",            plan: "GLOBAL" },
+                        { id: "euro-card",      name: "EU Blue Card",       plan: "GLOBAL" },
+                      ].map((t) => (
+                        <button key={t.id} onClick={() => setData({ template: t.id })}
+                          className={`border rounded-lg p-1.5 text-center text-[10px] cursor-pointer transition-colors leading-tight ${data.template === t.id ? "border-blue-600 bg-blue-50 text-blue-600 font-semibold" : "hover:bg-slate-50 text-slate-600 border-slate-200"}`}>
+                          <span className="block truncate">{t.name}</span>
+                          <span className={`text-[8px] font-medium ${t.plan === "FREE" ? "text-emerald-600" : t.plan === "PRO" ? "text-indigo-500" : "text-amber-500"}`}>{t.plan}</span>
                         </button>
                       ))}
                     </div>
@@ -1349,10 +1366,13 @@ function ResumePreview({ data, onPhotoClick, onCropPhoto }: { data: ResumeData }
   const tmpl  = data.template || "modern"
   const photo = data.contact.photoDataUrl
 
-  if (tmpl === "minimal" || tmpl === "ats-friendly") return <MinimalTemplate data={data} lang={lang} />
+  if (tmpl === "minimal" || tmpl === "ats-friendly" || tmpl === "euro-card") return <MinimalTemplate data={data} lang={lang} />
   if (tmpl === "classic") return <ClassicTemplate data={data} lang={lang} />
-  if (tmpl === "executive") return <ExecutiveTemplate data={data} lang={lang} />
+  if (tmpl === "executive" || tmpl === "consultant-pro") return <ExecutiveTemplate data={data} lang={lang} />
+  if (tmpl === "academic") return <AcademicTemplate data={data} lang={lang} />
+  if (tmpl === "global-tech") return <GlobalTechTemplate data={data} lang={lang} onPhotoClick={onPhotoClick} onCropPhoto={onCropPhoto} />
   if (SIDEBAR_TEMPLATES.has(tmpl)) return <SidebarTemplate data={data} lang={lang} photo={photo} onPhotoClick={onPhotoClick} onCropPhoto={onCropPhoto} />
+  if (tmpl === "uae-pro") return <PhotoHeaderTemplate data={data} lang={lang} photo={photo} onPhotoClick={onPhotoClick} onCropPhoto={onCropPhoto} />
   if (tmpl === "german" || tmpl === "japanese") return <PhotoHeaderTemplate data={data} lang={lang} photo={photo} onPhotoClick={onPhotoClick} onCropPhoto={onCropPhoto} />
   return <ModernTemplate data={data} lang={lang} />
 }
@@ -1571,6 +1591,87 @@ function PhotoHeaderTemplate({ data, lang, photo, onPhotoClick, onCropPhoto }: {
       </div>
       <div className="h-px bg-slate-200 mb-5" />
       <ResumeBody data={data} lang={lang} accent={accent} />
+    </div>
+  )
+}
+
+// ── Global Tech Template ──────────────────────────────────────────────────────
+
+function GlobalTechTemplate({ data, lang, onPhotoClick }: { data: ResumeData; lang: string; onPhotoClick: () => void; onCropPhoto: () => void }) {
+  const accent    = "#0D9488"
+  const sidebarBg = "#134E4A"
+  const name      = `${data.contact.firstName || "First"} ${data.contact.lastName || "Last"}`.trim()
+
+  return (
+    <div className={`${PAGE} flex`} style={{ fontSize: "10pt", lineHeight: "1.45", fontFamily: "'Courier New', Courier, monospace" }}>
+      {/* Sidebar */}
+      <div className="w-[36%] shrink-0 flex flex-col" style={{ backgroundColor: sidebarBg, padding: "16mm 10mm" }}>
+        <div className="flex justify-center mb-5">
+          <div className="w-20 h-20 rounded-lg border-2 flex items-center justify-center overflow-hidden cursor-pointer"
+            style={{ borderColor: accent }} onClick={onPhotoClick}>
+            <span className="text-xs font-bold" style={{ color: accent }}>DEV</span>
+          </div>
+        </div>
+        <h1 className="text-base font-bold text-white text-center leading-tight mb-1">{name}</h1>
+        <div className="h-px w-full mb-3" style={{ backgroundColor: accent }} />
+        <div className="space-y-1.5 text-xs" style={{ color: "#94D5C8" }}>
+          {data.contact.email    && <div className="break-all">{data.contact.email}</div>}
+          {data.contact.phone    && <div>{data.contact.phone}</div>}
+          {(data.contact.city || data.contact.country) && <div>{[data.contact.city, data.contact.country].filter(Boolean).join(", ")}</div>}
+          {data.contact.linkedin && <div className="break-all">{data.contact.linkedin}</div>}
+          {data.contact.website  && <div className="break-all">{data.contact.website}</div>}
+        </div>
+        {data.skills.length > 0 && (
+          <div className="mt-5">
+            <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>{h(lang, "skills")}</h3>
+            <div className="space-y-1">
+              {data.skills.map((s) => (
+                <div key={s.id} className="flex items-center justify-between">
+                  <span className="text-xs text-white/80">{s.name}</span>
+                  <div className="flex gap-0.5 ml-2">
+                    {["Beginner", "Intermediate", "Advanced", "Expert"].map((lvl, idx) => (
+                      <div key={lvl} className="w-2 h-2 rounded-sm" style={{
+                        backgroundColor: ["Beginner","Intermediate","Advanced","Expert"].indexOf(s.level) >= idx ? accent : "rgba(255,255,255,0.15)"
+                      }} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {data.languages.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>{h(lang, "languages")}</h3>
+            {data.languages.map((l) => (
+              <div key={l.id} className="text-xs text-white/70">{l.language} · {l.proficiency}</div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Main */}
+      <div className="flex-1 flex flex-col" style={{ padding: "16mm 14mm" }}>
+        <ResumeBody data={data} lang={lang} accent={accent} skipSkills />
+      </div>
+    </div>
+  )
+}
+
+// ── Academic CV Template ──────────────────────────────────────────────────────
+
+function AcademicTemplate({ data, lang }: { data: ResumeData; lang: string }) {
+  const accent = "#374151"
+  const name   = `${data.contact.firstName || "First"} ${data.contact.lastName || "Last"}`.trim()
+  const contactLine = [data.contact.email, data.contact.phone, [data.contact.city, data.contact.country].filter(Boolean).join(", "), data.contact.linkedin, data.contact.website].filter(Boolean).join("  ·  ")
+
+  return (
+    <div className={PAGE} style={{ padding: "20mm 22mm", fontSize: "10.5pt", lineHeight: "1.55", fontFamily: "Georgia, 'Times New Roman', serif" }}>
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-bold tracking-wide" style={{ color: accent }}>{name}</h1>
+        <p className="text-xs text-slate-500 mt-2 leading-relaxed">{contactLine}</p>
+        <div className="h-px bg-slate-400 mt-4" />
+      </div>
+      <ResumeBody data={data} lang={lang} accent={accent} headingStyle="UPPERCASE" />
     </div>
   )
 }
