@@ -839,14 +839,15 @@ export function CreateWizard({ userPlan = "FREE" }: { userPlan?: string }) {
       )
 
       const sections = [
-        { type: "CONTACT",        content: contactContent,                       order: 0 },
-        { type: "SUMMARY",        content: { text: editedSummary || "" },         order: 1 },
-        { type: "EXPERIENCE",     content: { items: experienceItems },             order: 2 },
-        { type: "EDUCATION",      content: { items: educationItems },              order: 3 },
-        { type: "SKILLS",         content: { items: skillItems },                  order: 4 },
-        { type: "LANGUAGES",      content: { items: langItems },                   order: 5 },
-        { type: "CERTIFICATIONS", content: { items: certItems },                   order: 6 },
-        { type: "PROJECTS",       content: { items: projItems },                   order: 7 },
+        { type: "CONTACT",        content: contactContent,                                      order: 0 },
+        { type: "SUMMARY",        content: { text: editedSummary || "" },                        order: 1 },
+        { type: "EXPERIENCE",     content: { items: experienceItems },                            order: 2 },
+        { type: "EDUCATION",      content: { items: educationItems },                             order: 3 },
+        { type: "SKILLS",         content: { items: skillItems },                                 order: 4 },
+        { type: "LANGUAGES",      content: { items: langItems },                                  order: 5 },
+        { type: "CERTIFICATIONS", content: { items: certItems },                                  order: 6 },
+        { type: "PROJECTS",       content: { items: projItems },                                  order: 7 },
+        { type: "PORTFOLIO",      content: { tagline: "", links: [], showcases: [] },             order: 8 },
       ]
 
       const payload = {

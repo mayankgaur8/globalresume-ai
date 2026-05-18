@@ -233,6 +233,73 @@ Return ONLY valid JSON in this format: {"score": 85, "suggestions": ["...", "...
   }
 }
 
+export async function generateProjectDescription(
+  title: string,
+  role: string,
+  technologies: string,
+  lang = "en"
+): Promise<string> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
+  await requireAIAccess(session.user.id)
+
+  if (!aiEnabled) {
+    return `${title ? `${title}: ` : ""}Built a production-grade solution using ${technologies || "modern technologies"}, taking ownership as ${role || "lead contributor"}. Delivered measurable impact through careful system design, performance optimization, and cross-functional collaboration. (Add OPENAI_API_KEY to generate a personalized description)`
+  }
+
+  const content = await callOpenAI(
+    [
+      {
+        role: "system",
+        content:
+          "You are a professional resume writer specializing in portfolio and project descriptions. Write concise, impact-focused, ATS-friendly project descriptions with measurable outcomes.",
+      },
+      {
+        role: "user",
+        content: `Write a compelling project description for a resume/portfolio.\n\nProject: ${title}\nRole: ${role || "Contributor"}\nTechnologies: ${technologies || "Not specified"}\n\nRequirements:\n- 2-3 sentences max\n- Start with an action verb\n- Include technologies naturally\n- Quantify impact if possible\n- ATS-keyword optimized\n- Output language code: ${lang}`,
+      },
+    ],
+    150
+  )
+
+  await logUsage(session.user.id, "GENERATE_PROJECT_DESC", 120)
+  return content.trim()
+}
+
+export async function generateLinkedInBio(
+  name: string,
+  jobTitle: string,
+  summary: string,
+  skills: string[],
+  lang = "en"
+): Promise<string> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
+  await requireAIAccess(session.user.id)
+
+  if (!aiEnabled) {
+    return `${jobTitle} | Passionate about delivering results and driving innovation.\n\n${summary || "Experienced professional with a track record of success."}\n\nCore competencies: ${skills.slice(0, 5).join(" · ") || "Strategic thinking · Leadership · Problem-solving"}\n\nOpen to new opportunities. Let's connect!\n\n(Add OPENAI_API_KEY for a personalized LinkedIn bio)`
+  }
+
+  const content = await callOpenAI(
+    [
+      {
+        role: "system",
+        content:
+          "You are a personal branding expert who writes compelling LinkedIn bios that attract recruiters and opportunities.",
+      },
+      {
+        role: "user",
+        content: `Write a LinkedIn About section bio for:\nName: ${name}\nRole: ${jobTitle}\nSummary: ${summary}\nTop Skills: ${skills.slice(0, 8).join(", ")}\n\nRequirements:\n- 150-200 words\n- Engaging, first-person voice\n- Highlights value proposition\n- Ends with a clear CTA\n- Language: ${lang}`,
+      },
+    ],
+    300
+  )
+
+  await logUsage(session.user.id, "GENERATE_LINKEDIN_BIO", 200)
+  return content.trim()
+}
+
 export async function generateCoverLetter(
   jobTitle: string,
   company: string,

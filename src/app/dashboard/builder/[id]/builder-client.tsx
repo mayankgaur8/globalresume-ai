@@ -16,7 +16,8 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { generateSummary, rewriteBullet, optimizeForATS, translateContent } from "@/actions/ai"
+import { generateSummary, rewriteBullet, optimizeForATS, translateContent, generateProjectDescription, generateLinkedInBio } from "@/actions/ai"
+import type { Portfolio, PortfolioLink, PortfolioShowcase } from "@/store/useResumeStore"
 import { useToast, type ToastType } from "@/components/ui/toaster"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -284,96 +285,165 @@ function analyzeResume(
   const sug: ATSSuggestion[] = []
   const go = (s: ATSSuggestion) => sug.push(s)
 
-  // ── Contact (10 pts) ──
+  // ── Contact (15 pts max) ──
   let c = 0
-  if (data.contact.firstName || data.contact.lastName) c += 2
-  if (data.contact.email) c += 3
+  if (data.contact.firstName || data.contact.lastName) c += 3
+  if (data.contact.email) c += 4
   else go({ id: "no-email", priority: "high", section: "contact", title: "Add email address", reason: "ATS and recruiters require an email — without it your application cannot proceed.", fix: "Open Contact and add your professional email.", apply: () => switchSection("contact") })
-  if (data.contact.phone) c += 2
+  if (data.contact.phone) c += 3
   else go({ id: "no-phone", priority: "high", section: "contact", title: "Add phone number", reason: "87% of recruiters call candidates directly before scheduling interviews.", fix: "Add your mobile number in the Contact section.", apply: () => switchSection("contact") })
-  if (data.contact.linkedin) c += 2
+  if (data.contact.linkedin) c += 3
   else go({ id: "no-linkedin", priority: "medium", section: "contact", title: "Add LinkedIn URL", reason: "Recruiters verify LinkedIn for 95% of candidates before responding.", fix: "Add your linkedin.com/in/username URL.", apply: () => switchSection("contact") })
-  if (data.contact.city || data.contact.country) c += 1
+  if (data.contact.city || data.contact.country) c += 2
 
-  // ── Summary (10 pts) ──
+  // ── Summary (15 pts max) ──
   let s = 0
   const wc = data.summary.trim().split(/\s+/).filter(Boolean).length
   if (wc === 0) {
-    go({ id: "no-summary", priority: "high", section: "summary", title: "Write a professional summary", reason: "The summary is the first thing ATS and recruiters read — it frames your entire application.", fix: "Write 30–80 words covering your role, experience level, and top 2 skills.", apply: () => switchSection("summary") })
-  } else if (wc < 25) {
-    s += 3
-    go({ id: "short-summary", priority: "high", section: "summary", title: `Summary too brief (${wc} words)`, reason: "Short summaries score poorly in ATS keyword matching.", fix: "Expand to 35–70 words with measurable impact and key skills.", apply: () => switchSection("summary") })
-  } else if (wc > 100) {
-    s += 7
-    go({ id: "long-summary", priority: "low", section: "summary", title: "Summary may be too long", reason: "Recruiters skim — over 100 words often gets skipped.", fix: "Trim to 50–80 words focusing on value, not history.", apply: () => switchSection("summary") })
-  } else { s += 10 }
+    go({ id: "no-summary", priority: "high", section: "summary", title: "Write a professional summary", reason: "The summary is the first thing ATS and recruiters read — it frames your entire application.", fix: "Write 35–80 words covering your role, experience level, and top 2 skills.", apply: () => switchSection("summary") })
+  } else if (wc < 20) {
+    s += 4
+    go({ id: "short-summary", priority: "high", section: "summary", title: `Summary too brief (${wc} words)`, reason: "Short summaries score poorly in ATS keyword matching — need at least 30 words.", fix: "Expand to 35–70 words with measurable impact and key skills.", apply: () => switchSection("summary") })
+  } else if (wc >= 20 && wc < 35) {
+    s += 9
+    go({ id: "thin-summary", priority: "medium", section: "summary", title: "Summary could be stronger", reason: "Aim for 35–70 words for best ATS keyword coverage.", fix: "Add 1–2 sentences about your key impact and core skills.", apply: () => switchSection("summary") })
+  } else if (wc > 110) {
+    s += 11
+    go({ id: "long-summary", priority: "low", section: "summary", title: "Summary is too long", reason: "Over 100 words risks being skipped by recruiters — keep it scannable.", fix: "Trim to 50–80 words focusing on your top value.", apply: () => switchSection("summary") })
+  } else { s += 15 }
 
-  // ── Experience (20 pts) ──
+  // ── Experience (25 pts max) ──
   let e = 0
   if (data.experience.length === 0) {
-    go({ id: "no-exp", priority: "high", section: "experience", title: "Add work experience", reason: "Experience is the highest-weighted section in ATS scoring.", fix: "Add at least one position with title, company, dates, and bullets.", apply: () => switchSection("experience") })
+    go({ id: "no-exp", priority: "high", section: "experience", title: "Add work experience", reason: "Experience is the highest-weighted section in ATS scoring (25 pts).", fix: "Add at least one position with title, company, dates, and bullet achievements.", apply: () => switchSection("experience") })
   } else {
-    e += Math.min(8, data.experience.length * 3)
+    e += Math.min(10, data.experience.length * 4)
     const missingDates = data.experience.filter((x) => !x.startDate)
-    if (missingDates.length > 0) {
-      go({ id: "missing-dates", priority: "medium", section: "experience", title: "Missing start dates in experience", reason: "ATS systems flag missing dates and ranking drops significantly.", fix: "Add start (and end) dates for all positions.", apply: () => switchSection("experience") })
-    } else { e += 4 }
-    const hasMetrics = data.experience.some((x) => /\d+%|\$[\d,]+|\d+\s?x\b|saved|reduced|increased|improved|led\s+\d|team of \d/i.test(x.description))
-    if (!hasMetrics) {
-      go({ id: "no-metrics", priority: "medium", section: "experience", title: "No quantified achievements", reason: 'Metrics make you 40% more likely to get an interview. "Reduced costs by 30%" beats "Reduced costs."', fix: 'Add numbers: "Reduced load time by 40%", "Managed $2M budget", "Led team of 12".', apply: () => switchSection("experience") })
-    } else { e += 4 }
+    if (missingDates.length === 0) e += 5
+    else go({ id: "missing-dates", priority: "medium", section: "experience", title: `${missingDates.length} experience entr${missingDates.length > 1 ? "ies" : "y"} missing dates`, reason: "ATS systems heavily penalise missing employment dates.", fix: "Add start (and end) dates for all positions.", apply: () => switchSection("experience") })
+    const hasMetrics = data.experience.some((x) => /\d+\s*%|\$[\d,]+|\d+\s*x\b|saved|reduced|increased|improved|led\s+\d|team of \d|\d+k\b|\d+m\b/i.test(x.description))
+    if (hasMetrics) e += 5
+    else go({ id: "no-metrics", priority: "high", section: "experience", title: "No quantified achievements detected", reason: 'Metrics make you 40% more likely to get an interview. "Cut load time by 40%" beats "Improved performance."', fix: 'Add numbers: "Reduced latency by 40%", "Managed $2M budget", "Led team of 12".' , apply: () => switchSection("experience") })
     const weakBullets = data.experience.filter((x) => x.description.trim().length < 60)
-    if (weakBullets.length > 0) {
-      go({ id: "weak-bullets", priority: "medium", section: "experience", title: `${weakBullets.length} experience entry has thin description`, reason: "Brief descriptions miss critical ATS keywords.", fix: "Add 3–5 bullet points per role using action verbs and specific outcomes.", apply: () => switchSection("experience") })
-    } else { e += 4 }
+    if (weakBullets.length === 0) e += 5
+    else go({ id: "weak-bullets", priority: "medium", section: "experience", title: `${weakBullets.length} experience entr${weakBullets.length > 1 ? "ies have" : "y has"} thin descriptions`, reason: "Brief descriptions miss critical ATS keywords and signal low impact.", fix: "Add 2–4 bullet points per role using action verbs and specific outcomes.", apply: () => switchSection("experience") })
   }
 
-  // ── Education (10 pts) ──
+  // ── Skills (15 pts max) ──
+  let sk = 0
+  if (data.skills.length === 0) {
+    go({ id: "no-skills", priority: "high", section: "skills", title: "Add technical and soft skills", reason: "Skills are directly keyword-matched by ATS against job descriptions.", fix: "Add 8–14 relevant technical skills, tools, and frameworks.", apply: () => switchSection("skills") })
+  } else if (data.skills.length < 5) {
+    sk += 5
+    go({ id: "few-skills", priority: "high", section: "skills", title: `Only ${data.skills.length} skill${data.skills.length > 1 ? "s" : ""} listed`, reason: "ATS needs enough keyword density to confidently match you to the role.", fix: "Add at least 8 skills — include tools, languages, frameworks, and methodologies.", apply: () => switchSection("skills") })
+  } else if (data.skills.length < 8) {
+    sk += 9
+    go({ id: "more-skills", priority: "medium", section: "skills", title: "Add a few more skills", reason: "8–14 skills gives optimal ATS keyword coverage.", fix: "Add 2–4 more relevant tools or technologies.", apply: () => switchSection("skills") })
+  } else { sk += 15 }
+
+  // ── Education (10 pts max) ──
   let ed = 0
   if (data.education.length === 0) {
-    go({ id: "no-edu", priority: "high", section: "education", title: "Add education", reason: "Most ATS systems require an education entry — missing it can disqualify you automatically.", fix: "Add your highest qualification.", apply: () => switchSection("education") })
+    go({ id: "no-edu", priority: "high", section: "education", title: "Add education", reason: "Most ATS systems require an education entry — missing it can auto-disqualify you.", fix: "Add your highest qualification.", apply: () => switchSection("education") })
   } else {
     ed += 6
     const incomplete = data.education.filter((x) => !x.degree && !x.field)
-    if (incomplete.length > 0) {
-      go({ id: "incomplete-edu", priority: "medium", section: "education", title: "Complete degree details", reason: "ATS matches degree type and field to job requirements.", fix: "Add degree type (B.Tech, MBA…) and field of study.", apply: () => switchSection("education") })
-    } else { ed += 4 }
+    if (incomplete.length === 0) ed += 4
+    else go({ id: "incomplete-edu", priority: "medium", section: "education", title: "Incomplete degree details", reason: "ATS matches degree type and field to job requirements.", fix: "Add degree type (B.Tech, MBA…) and field of study.", apply: () => switchSection("education") })
   }
 
-  // ── Skills (15 pts) ──
-  let sk = 0
-  if (data.skills.length === 0) {
-    go({ id: "no-skills", priority: "high", section: "skills", title: "Add technical skills", reason: "Skills are directly matched by ATS keyword scanners against job descriptions.", fix: "Add 8–14 relevant technical and soft skills.", apply: () => switchSection("skills") })
-  } else if (data.skills.length < 5) {
-    sk += 5
-    go({ id: "few-skills", priority: "medium", section: "skills", title: `Only ${data.skills.length} skills listed`, reason: "ATS needs enough keywords to confidently match you to the role.", fix: "Add more skills — tools, languages, frameworks, and methodologies.", apply: () => switchSection("skills") })
-  } else { sk += 15 }
-
-  // ── Certifications bonus (5 pts) ──
-  let cert = data.certifications.length > 0 ? 5 : 0
+  // ── Certifications (10 pts max) ──
+  let cert = Math.min(10, data.certifications.length * 4)
   if (data.certifications.length === 0) {
-    go({ id: "no-certs", priority: "low", section: "certifications", title: "Add certifications (optional but valuable)", reason: "Certifications boost ATS matching for technical and compliance roles.", fix: "Add any professional certifications — AWS, Google, PMP, etc.", apply: () => switchSection("certifications") })
+    go({ id: "no-certs", priority: "low", section: "certifications", title: "Add certifications (boosts ATS score)", reason: "Certifications add +4 pts each (up to 10) and improve keyword matching for technical and leadership roles.", fix: "Add professional certifications — AWS, Google Cloud, PMP, CISSP, etc.", apply: () => switchSection("certifications") })
+  } else if (data.certifications.length < 2) {
+    go({ id: "more-certs", priority: "low", section: "certifications", title: "Add more certifications for higher score", reason: "Each certification adds up to 4 points to your ATS score.", fix: "Consider adding relevant industry certifications.", apply: () => switchSection("certifications") })
   }
 
-  // ── Photo / template ──
+  // ── Portfolio & Online Presence (10 pts max) ──
+  let port = 0
+  const portfolioLinks = data.portfolio?.links ?? []
+  const featuredShowcases = (data.portfolio?.showcases ?? []).filter((s) => s.featured)
+  const hasGitHub = portfolioLinks.some((l) => l.platform === "github") || (data.contact.website || "").includes("github")
+  const hasPortfolioSite = portfolioLinks.some((l) => ["portfolio", "website", "behance", "dribbble"].includes(l.platform))
+  if (hasGitHub) port += 3
+  else if (data.projects.length > 0) port += 1
+  if (hasPortfolioSite || data.contact.website) port += 2
+  if (featuredShowcases.length > 0) port += Math.min(5, featuredShowcases.length * 2)
+  else if (data.projects.length > 0) port += Math.min(3, data.projects.length)
+  if (port === 0) {
+    go({ id: "no-portfolio", priority: "medium", section: "portfolio", title: "Add portfolio & online presence", reason: "Recruiters check GitHub and portfolio sites for 73% of tech and creative roles.", fix: "Add your GitHub, portfolio website, or featured projects in the Portfolio section.", apply: () => switchSection("portfolio") })
+  } else if (!hasGitHub && data.skills.some((sk2) => ["javascript","python","react","java","typescript","node"].includes(sk2.name.toLowerCase()))) {
+    go({ id: "add-github", priority: "medium", section: "portfolio", title: "Add GitHub profile for tech roles", reason: "Tech recruiters visit GitHub profiles for 80% of engineering candidates.", fix: "Add your github.com/username in the Portfolio section.", apply: () => switchSection("portfolio") })
+  }
+
+  // ── Template / photo warnings ──
   if (PHOTO_TEMPLATES.has(data.template) && data.contact.photoDataUrl && (data.targetCountry === "US" || data.targetCountry === "UK" || data.targetCountry === "CA")) {
-    go({ id: "photo-bias", priority: "medium", section: "contact", title: "Photo may reduce ATS score in US/UK/CA", reason: "US, UK, and Canadian employers are legally required to avoid bias — photos can trigger rejections.", fix: "Remove photo or switch to Classic (ATS-safe) template.", applyLabel: "Switch to Classic", apply: () => setData({ template: "classic" }) })
+    go({ id: "photo-bias", priority: "medium", section: "contact", title: "Photo may reduce callbacks in US/UK/CA", reason: "US, UK, and Canadian employers are legally required to avoid bias — photos can trigger unconscious rejections.", fix: "Remove photo or switch to a no-photo template.", applyLabel: "Switch to Classic", apply: () => setData({ template: "classic" }) })
   }
 
-  const raw = c + s + e + ed + sk + cert
-  const score = Math.round(Math.min(100, (raw / 70) * 100))
+  // ── Leadership & career level suggestions ──
+  const yearsExp = data.experience.length
+  if (yearsExp >= 3) {
+    const hasLeadership = data.experience.some((x) => /\b(led|managed|directed|mentored|oversaw|headed|built|scaled|architected|spearheaded)\b/i.test(x.description))
+    if (!hasLeadership) {
+      go({ id: "no-leadership", priority: "medium", section: "experience", title: "Add leadership or ownership language", reason: "Senior roles expect initiative keywords — 'led', 'built', 'architected', 'scaled'.", fix: "Reframe achievements: 'Led a team of 5 to deliver...' or 'Architected a system that...'", apply: () => switchSection("experience") })
+    }
+  }
+
+  const score = Math.round(Math.min(100, c + s + e + sk + ed + cert + port))
 
   return {
     score,
     breakdown: [
-      { label: "Contact",      score: c,    max: 10 },
-      { label: "Summary",      score: s,    max: 10 },
-      { label: "Experience",   score: e,    max: 20 },
-      { label: "Education",    score: ed,   max: 10 },
-      { label: "Skills",       score: sk,   max: 15 },
-      { label: "Certifications", score: cert, max: 5 },
+      { label: "Contact",       score: c,    max: 15 },
+      { label: "Summary",       score: s,    max: 15 },
+      { label: "Experience",    score: e,    max: 25 },
+      { label: "Skills",        score: sk,   max: 15 },
+      { label: "Education",     score: ed,   max: 10 },
+      { label: "Certifications",score: cert, max: 10 },
+      { label: "Portfolio",     score: port, max: 10 },
     ],
     suggestions: sug.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] - { high: 0, medium: 1, low: 2 }[b.priority])),
+  }
+}
+
+// ─── Professional Presence Score ─────────────────────────────────────────────
+
+function computePresenceScore(data: ResumeData): {
+  score: number
+  label: string
+  breakdown: Array<{ label: string; score: number; max: number; tip?: string }>
+} {
+  const links = data.portfolio?.links ?? []
+  const showcases = data.portfolio?.showcases ?? []
+
+  const hasGitHub = links.some((l) => l.platform === "github") || (data.contact.website || "").includes("github")
+  const hasPortfolio = links.some((l) => ["portfolio", "website", "behance", "dribbble"].includes(l.platform)) || !!data.contact.website
+  const linkedin = data.contact.linkedin ? 20 : 0
+  const gitScore = hasGitHub ? 15 : 0
+  const portScore = hasPortfolio ? 10 : 0
+  const featuredCount = showcases.filter((s) => s.featured).length
+  const showcaseScore = Math.min(20, featuredCount * 7 + (showcases.length > 0 ? 3 : 0))
+  const certScore = Math.min(15, data.certifications.length * 5)
+  const skillScore = Math.min(10, Math.round(data.skills.length * 0.8))
+  const contactScore = [data.contact.email, data.contact.phone, data.contact.city].filter(Boolean).length >= 3 ? 10 : 5
+
+  const total = Math.min(100, linkedin + gitScore + portScore + showcaseScore + certScore + skillScore + contactScore)
+  const label = total >= 80 ? "Recruiter-Ready" : total >= 60 ? "Strong Profile" : total >= 40 ? "Needs Work" : "Getting Started"
+
+  return {
+    score: total,
+    label,
+    breakdown: [
+      { label: "LinkedIn",       score: linkedin,      max: 20, tip: !data.contact.linkedin ? "Add LinkedIn URL in Contact" : undefined },
+      { label: "GitHub / Code",  score: gitScore,      max: 15, tip: !hasGitHub ? "Add GitHub link in Portfolio" : undefined },
+      { label: "Portfolio Site", score: portScore,     max: 10, tip: !hasPortfolio ? "Add portfolio URL in Portfolio" : undefined },
+      { label: "Featured Work",  score: showcaseScore, max: 20, tip: featuredCount === 0 ? "Add featured projects in Portfolio" : undefined },
+      { label: "Certifications", score: certScore,     max: 15, tip: certScore < 15 ? "Add more certifications" : undefined },
+      { label: "Skills",         score: skillScore,    max: 10, tip: skillScore < 10 ? "Add more skills" : undefined },
+      { label: "Contact Info",   score: contactScore,  max: 10, tip: contactScore < 10 ? "Complete contact details" : undefined },
+    ],
   }
 }
 
@@ -452,6 +522,23 @@ export function BuilderClient({ resumeId, userRole }: Props) {
             : { id: l.id || `lang-${i}`, language: l.language || "", proficiency: l.proficiency || "Professional" }
         )
 
+        const rawPortfolio = findSection("PORTFOLIO") || {}
+        const portfolio: ResumeData["portfolio"] = {
+          tagline: (rawPortfolio as { tagline?: string }).tagline || "",
+          links: Array.isArray((rawPortfolio as { links?: unknown[] }).links)
+            ? ((rawPortfolio as { links: Array<{ id?: string; platform?: string; url?: string }> }).links).map((l, i) => ({
+                id: l.id || `link-${i}`, platform: l.platform || "custom", url: l.url || "",
+              }))
+            : [],
+          showcases: Array.isArray((rawPortfolio as { showcases?: unknown[] }).showcases)
+            ? ((rawPortfolio as { showcases: Array<Partial<PortfolioShowcase>> }).showcases).map((s, i) => ({
+                id: s.id || `showcase-${i}`, title: s.title || "", description: s.description || "",
+                technologies: s.technologies || "", role: s.role || "", achievements: s.achievements || "",
+                metrics: s.metrics || "", githubUrl: s.githubUrl || "", demoUrl: s.demoUrl || "", featured: s.featured ?? false,
+              }))
+            : [],
+        }
+
         setData({
           id: resume.id, title: resume.title,
           language: resume.languageCode || "en",
@@ -459,7 +546,7 @@ export function BuilderClient({ resumeId, userRole }: Props) {
           targetCountry: resume.targetCountry || "US",
           contact: rawContact,
           summary: findSection("SUMMARY")?.text || "",
-          experience, education, skills, projects, certifications, languages,
+          experience, education, skills, projects, certifications, languages, portfolio,
         })
       })
       .catch(() => {})
@@ -471,14 +558,15 @@ export function BuilderClient({ resumeId, userRole }: Props) {
     setIsSaving(true)
     try {
       const sections = [
-        { type: "CONTACT",        content: data.contact,                  order: 0 },
-        { type: "SUMMARY",        content: { text: data.summary },        order: 1 },
-        { type: "EXPERIENCE",     content: { items: data.experience },     order: 2 },
-        { type: "EDUCATION",      content: { items: data.education },      order: 3 },
-        { type: "SKILLS",         content: { items: data.skills },         order: 4 },
-        { type: "LANGUAGES",      content: { items: data.languages },      order: 5 },
-        { type: "CERTIFICATIONS", content: { items: data.certifications }, order: 6 },
-        { type: "PROJECTS",       content: { items: data.projects },       order: 7 },
+        { type: "CONTACT",        content: data.contact,                                               order: 0 },
+        { type: "SUMMARY",        content: { text: data.summary },                                     order: 1 },
+        { type: "EXPERIENCE",     content: { items: data.experience },                                  order: 2 },
+        { type: "EDUCATION",      content: { items: data.education },                                   order: 3 },
+        { type: "SKILLS",         content: { items: data.skills },                                      order: 4 },
+        { type: "LANGUAGES",      content: { items: data.languages },                                   order: 5 },
+        { type: "CERTIFICATIONS", content: { items: data.certifications },                              order: 6 },
+        { type: "PROJECTS",       content: { items: data.projects },                                    order: 7 },
+        { type: "PORTFOLIO",      content: data.portfolio || { tagline: "", links: [], showcases: [] }, order: 8 },
       ]
       const body = { title: data.title, languageCode: data.language, templateId: data.template || "modern", targetCountry: data.targetCountry, sections }
       if (!dbResumeId) {
@@ -893,6 +981,22 @@ function AICoachPanel({ data, setData, updateExperience, atsJobDesc, setAtsJobDe
     low:    { bg: "bg-blue-50 border-blue-100",   badge: "bg-blue-100 text-blue-700",  dot: "bg-blue-400"   },
   }
 
+  const presence = computePresenceScore(data)
+  const presenceColor = presence.score >= 80 ? "text-emerald-400" : presence.score >= 60 ? "text-amber-400" : "text-red-400"
+  const [showPresence, setShowPresence] = useState(false)
+  const [linkedInLoading, setLinkedInLoading] = useState(false)
+
+  const handleGenerateLinkedIn = async () => {
+    setLinkedInLoading(true)
+    try {
+      const name = `${data.contact.firstName} ${data.contact.lastName}`.trim()
+      const result = await generateLinkedInBio(name, data.experience[0]?.position || "Professional", data.summary, data.skills.map((s) => s.name), data.language)
+      await navigator.clipboard.writeText(result)
+      onToast("LinkedIn bio generated and copied to clipboard!", "success")
+    } catch (e) { onToast(e instanceof Error ? e.message : "Failed", "error") }
+    finally { setLinkedInLoading(false) }
+  }
+
   return (
     <div className="space-y-5">
       {/* ATS Score Card */}
@@ -925,6 +1029,39 @@ function AICoachPanel({ data, setData, updateExperience, atsJobDesc, setAtsJobDe
         </div>
       </div>
 
+      {/* Professional Presence Score */}
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowPresence((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-slate-500" />
+            <span className="text-sm font-semibold text-slate-800">Professional Presence</span>
+            <span className={`text-sm font-bold ${presenceColor}`}>{presence.score}/100</span>
+            <span className="text-[10px] text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded-full">{presence.label}</span>
+          </div>
+          <ChevronRight className={`h-4 w-4 text-slate-400 transition-transform ${showPresence ? "rotate-90" : ""}`} />
+        </button>
+        {showPresence && (
+          <div className="p-4 space-y-2.5">
+            <p className="text-xs text-slate-500">How visible and credible you appear to recruiters online.</p>
+            {presence.breakdown.map((b) => (
+              <div key={b.label}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-slate-600 font-medium">{b.label}</span>
+                  <span className="text-xs font-semibold text-slate-700">{b.score}/{b.max}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${b.score >= b.max * 0.8 ? "bg-emerald-500" : b.score >= b.max * 0.5 ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${(b.score / b.max) * 100}%` }} />
+                </div>
+                {b.tip && <p className="text-[10px] text-slate-400 mt-0.5">→ {b.tip}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Quick actions */}
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase text-slate-500 tracking-wider">Quick AI Actions</p>
@@ -946,6 +1083,16 @@ function AICoachPanel({ data, setData, updateExperience, atsJobDesc, setAtsJobDe
           <div>
             <p className="text-sm font-semibold text-slate-800">Rewrite Top Bullet</p>
             <p className="text-xs text-slate-500">Add metrics &amp; action verbs</p>
+          </div>
+        </button>
+        <button onClick={() => void handleGenerateLinkedIn()} disabled={linkedInLoading}
+          className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/40 transition-all text-left group">
+          <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 text-blue-700 group-hover:bg-blue-100">
+            {linkedInLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Generate LinkedIn Bio</p>
+            <p className="text-xs text-slate-500">Copied to clipboard when done</p>
           </div>
         </button>
       </div>
@@ -1349,10 +1496,188 @@ function SectionEditor({ section, data, updateContact, setData, addExperience, u
     )
   }
 
+  // ── Portfolio ─────────────────────────────────────────────────────────────────
+  if (section === "portfolio") {
+    const portfolio = data.portfolio ?? { tagline: "", links: [], showcases: [] }
+    const links: PortfolioLink[] = portfolio.links ?? []
+    const showcases: PortfolioShowcase[] = portfolio.showcases ?? []
+
+    const PLATFORMS = [
+      { id: "github",        label: "GitHub",          placeholder: "github.com/username"         },
+      { id: "portfolio",     label: "Portfolio Site",   placeholder: "myportfolio.com"             },
+      { id: "linkedin",      label: "LinkedIn",         placeholder: "linkedin.com/in/username"    },
+      { id: "behance",       label: "Behance",          placeholder: "behance.net/username"        },
+      { id: "dribbble",      label: "Dribbble",         placeholder: "dribbble.com/username"       },
+      { id: "medium",        label: "Medium",           placeholder: "medium.com/@username"        },
+      { id: "stackoverflow", label: "Stack Overflow",   placeholder: "stackoverflow.com/users/id"  },
+      { id: "kaggle",        label: "Kaggle",           placeholder: "kaggle.com/username"         },
+      { id: "leetcode",      label: "LeetCode",         placeholder: "leetcode.com/username"       },
+      { id: "hackerrank",    label: "HackerRank",       placeholder: "hackerrank.com/username"     },
+      { id: "youtube",       label: "YouTube",          placeholder: "youtube.com/@channel"        },
+      { id: "researchgate",  label: "ResearchGate",     placeholder: "researchgate.net/profile"    },
+      { id: "twitter",       label: "Twitter / X",      placeholder: "twitter.com/username"        },
+      { id: "website",       label: "Personal Website", placeholder: "https://yourdomain.com"      },
+      { id: "custom",        label: "Custom Link",      placeholder: "https://..."                 },
+    ]
+
+    const updatePortfolio = (updates: Partial<Portfolio>) =>
+      setData({ portfolio: { ...portfolio, ...updates } })
+
+    const addLink = () => updatePortfolio({ links: [...links, { id: crypto.randomUUID(), platform: "github", url: "" }] })
+    const updateLink = (id: string, up: Partial<PortfolioLink>) => updatePortfolio({ links: links.map((l) => l.id === id ? { ...l, ...up } : l) })
+    const removeLink = (id: string) => updatePortfolio({ links: links.filter((l) => l.id !== id) })
+
+    const addShowcase = () => updatePortfolio({ showcases: [...showcases, { id: crypto.randomUUID(), title: "", description: "", technologies: "", role: "", achievements: "", metrics: "", githubUrl: "", demoUrl: "", featured: false }] })
+    const updateShowcase = (id: string, up: Partial<PortfolioShowcase>) => updatePortfolio({ showcases: showcases.map((s) => s.id === id ? { ...s, ...up } : s) })
+    const removeShowcase = (id: string) => updatePortfolio({ showcases: showcases.filter((s) => s.id !== id) })
+
+    return (
+      <div className="space-y-6">
+        {/* Tagline */}
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold text-slate-500 uppercase flex items-center gap-1">
+            <Sparkles className="h-3 w-3 text-violet-500" />Professional Tagline
+          </Label>
+          <Input
+            value={portfolio.tagline}
+            onChange={(e) => updatePortfolio({ tagline: e.target.value })}
+            placeholder="e.g. Full-Stack Engineer & Open Source Contributor"
+          />
+          <p className="text-[10px] text-slate-400">Displayed under your name in modern templates</p>
+        </div>
+
+        {/* Social / Professional Links */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold text-slate-500 uppercase">Professional Links</Label>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addLink}>
+              <Plus className="h-3 w-3 mr-1" />Add Link
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {links.map((link) => (
+              <div key={link.id} className="flex gap-2 items-center">
+                <select
+                  value={link.platform}
+                  onChange={(e) => updateLink(link.id, { platform: e.target.value })}
+                  className="h-8 text-xs rounded-md border border-slate-200 bg-white px-1.5 w-28 shrink-0"
+                >
+                  {PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+                <Input
+                  value={link.url}
+                  onChange={(e) => updateLink(link.id, { url: e.target.value })}
+                  placeholder={PLATFORMS.find((p) => p.id === link.platform)?.placeholder ?? "https://..."}
+                  className="flex-1 h-8 text-xs"
+                />
+                <button onClick={() => removeLink(link.id)} className="text-slate-400 hover:text-red-500 shrink-0">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {links.length === 0 && (
+              <button onClick={addLink} className="w-full border-2 border-dashed border-slate-200 rounded-lg py-4 text-xs text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors">
+                + Add GitHub, Portfolio, Behance, Dribbble…
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Featured Work / Showcases */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold text-slate-500 uppercase">Featured Work</Label>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addShowcase}>
+              <Plus className="h-3 w-3 mr-1" />Add Project
+            </Button>
+          </div>
+          {showcases.map((sc, idx) => (
+            <div key={sc.id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-slate-50/50">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-semibold text-slate-700 truncate pr-2">{sc.title || `Project ${idx + 1}`}</span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+                    <input type="checkbox" checked={sc.featured} onChange={(e) => updateShowcase(sc.id, { featured: e.target.checked })} className="h-3.5 w-3.5 accent-blue-600" />
+                    Featured
+                  </label>
+                  <button onClick={() => removeShowcase(sc.id)} className="text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">Project Title</Label>
+                  <Input value={sc.title} onChange={(e) => updateShowcase(sc.id, { title: e.target.value })} placeholder="E-commerce Platform Redesign" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Your Role</Label>
+                  <Input value={sc.role} onChange={(e) => updateShowcase(sc.id, { role: e.target.value })} placeholder="Lead Frontend Engineer" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Technologies</Label>
+                  <Input value={sc.technologies} onChange={(e) => updateShowcase(sc.id, { technologies: e.target.value })} placeholder="React, Node, AWS" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Description</Label>
+                  <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-violet-200 text-violet-700 hover:bg-violet-50"
+                    disabled={aiLoading === sc.id}
+                    onClick={async () => {
+                      setAiLoading(sc.id)
+                      try {
+                        const result = await generateProjectDescription(sc.title, sc.role, sc.technologies, data.language)
+                        updateShowcase(sc.id, { description: result })
+                        onToast("Description improved!", "success")
+                      } catch (e) { onToast(e instanceof Error ? e.message : "Failed", "error") }
+                      finally { setAiLoading(null) }
+                    }}>
+                    {aiLoading === sc.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    &nbsp;AI Write
+                  </Button>
+                </div>
+                <textarea
+                  className="flex min-h-[70px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+                  value={sc.description}
+                  onChange={(e) => updateShowcase(sc.id, { description: e.target.value })}
+                  placeholder="Describe the project, your contributions, and impact…" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Key Achievements &amp; Metrics</Label>
+                <textarea
+                  className="flex min-h-[55px] w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+                  value={sc.achievements}
+                  onChange={(e) => updateShowcase(sc.id, { achievements: e.target.value })}
+                  placeholder="• Increased performance by 40%&#10;• Led team of 5 engineers" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">GitHub URL</Label>
+                  <Input value={sc.githubUrl} onChange={(e) => updateShowcase(sc.id, { githubUrl: e.target.value })} placeholder="github.com/…" className="text-xs h-8" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Live Demo</Label>
+                  <Input value={sc.demoUrl} onChange={(e) => updateShowcase(sc.id, { demoUrl: e.target.value })} placeholder="https://…" className="text-xs h-8" />
+                </div>
+              </div>
+            </div>
+          ))}
+          {showcases.length === 0 && (
+            <button onClick={addShowcase}
+              className="w-full border-2 border-dashed border-slate-200 rounded-xl py-8 text-center hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
+              <FolderOpen className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+              <p className="text-sm text-slate-400 font-medium">Add featured work to impress recruiters</p>
+              <p className="text-xs text-slate-300 mt-1">GitHub projects, client work, research, open-source contributions</p>
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-40 text-slate-400 text-sm text-center">
       <Circle className="h-8 w-8 mx-auto mb-2 text-slate-200" />
-      <p>This section is coming soon.</p>
+      <p>This section editor is not yet available.</p>
     </div>
   )
 }
@@ -1813,6 +2138,60 @@ function ResumeBody({ data, lang, accent = "#3B82F6", headingStyle = "NORMAL", s
           </div>
         </section>
       )}
+
+      {(() => {
+        const links = data.portfolio?.links?.filter((l) => l.url?.trim()) ?? []
+        const featured = (data.portfolio?.showcases ?? []).filter((s) => s.featured && (s.title || s.description))
+        if (links.length === 0 && featured.length === 0) return null
+        const platformLabel: Record<string, string> = {
+          github: "GitHub", portfolio: "Portfolio", linkedin: "LinkedIn", behance: "Behance",
+          dribbble: "Dribbble", medium: "Medium", stackoverflow: "Stack Overflow", kaggle: "Kaggle",
+          leetcode: "LeetCode", hackerrank: "HackerRank", youtube: "YouTube",
+          researchgate: "ResearchGate", twitter: "Twitter/X", website: "Website", custom: "Link",
+        }
+        return (
+          <section>
+            <SHead title={h(lang, "portfolio")} />
+            {links.length > 0 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+                {links.map((l) => (
+                  <span key={l.id} className="text-xs text-slate-600">
+                    <span className="font-medium text-slate-700">{platformLabel[l.platform] ?? l.platform}:</span>{" "}
+                    <span style={{ color: accent }}>{l.url.replace(/^https?:\/\//, "")}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            {featured.length > 0 && (
+              <div className="space-y-3">
+                {featured.map((sc) => (
+                  <div key={sc.id}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-slate-900 text-sm">{sc.title || "Project"}</p>
+                      {sc.role && <span className="text-xs text-slate-500 shrink-0">{sc.role}</span>}
+                    </div>
+                    {sc.technologies && (
+                      <p className="text-xs mt-0.5" style={{ color: accent }}>{sc.technologies}</p>
+                    )}
+                    {sc.description && (
+                      <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap leading-relaxed">{sc.description}</p>
+                    )}
+                    {sc.achievements && (
+                      <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{sc.achievements}</p>
+                    )}
+                    {(sc.githubUrl || sc.demoUrl) && (
+                      <p className="text-xs mt-1 space-x-3">
+                        {sc.githubUrl && <span style={{ color: accent }}>{sc.githubUrl.replace(/^https?:\/\//, "")}</span>}
+                        {sc.demoUrl && <span style={{ color: accent }}>{sc.demoUrl.replace(/^https?:\/\//, "")}</span>}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )
+      })()}
     </div>
   )
 }

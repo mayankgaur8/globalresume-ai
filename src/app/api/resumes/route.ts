@@ -32,6 +32,7 @@ const DEFAULT_SECTIONS = [
   { type: "CERTIFICATIONS",   content: { items: [] },                           order: 6 },
   { type: "PROJECTS",         content: { items: [] },                           order: 7 },
   { type: "REFERENCES",       content: { text: "Available upon request" },      order: 8 },
+  { type: "PORTFOLIO",        content: { tagline: "", links: [], showcases: [] }, order: 9 },
 ]
 
 export async function GET() {

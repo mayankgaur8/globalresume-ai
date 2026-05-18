@@ -1,5 +1,30 @@
 import { create } from "zustand"
 
+export type PortfolioLink = {
+  id: string
+  platform: string
+  url: string
+}
+
+export type PortfolioShowcase = {
+  id: string
+  title: string
+  description: string
+  technologies: string
+  role: string
+  achievements: string
+  metrics: string
+  githubUrl: string
+  demoUrl: string
+  featured: boolean
+}
+
+export type Portfolio = {
+  tagline: string
+  links: PortfolioLink[]
+  showcases: PortfolioShowcase[]
+}
+
 export type ResumeData = {
   id?: string
   title: string
@@ -57,6 +82,7 @@ export type ResumeData = {
     language: string
     proficiency: string
   }>
+  portfolio: Portfolio
 }
 
 const initialData: ResumeData = {
@@ -82,6 +108,7 @@ const initialData: ResumeData = {
   projects: [],
   certifications: [],
   languages: [],
+  portfolio: { tagline: "", links: [], showcases: [] },
 }
 
 type ResumeStore = {
