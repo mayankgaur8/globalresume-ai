@@ -484,9 +484,12 @@ export function BuilderClient({ resumeId, userRole }: Props) {
       const body = { title: data.title, languageCode: data.language, templateId: data.template || "modern", targetCountry: data.targetCountry, sections }
       if (!dbResumeId) {
         const res = await fetch("/api/resumes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-        const created = await res.json() as { id: string }
-        setDbResumeId(created.id)
-        router.replace(`/dashboard/builder/${created.id}`)
+        const payload = await res.json() as { success?: boolean; resume?: { id: string }; id?: string; message?: string }
+        if (!res.ok) throw new Error(payload.message ?? `HTTP ${res.status}`)
+        const newId = payload.resume?.id ?? payload.id
+        if (!newId) throw new Error("Server did not return a resume ID")
+        setDbResumeId(newId)
+        router.replace(`/dashboard/builder/${newId}`)
       } else {
         await fetch(`/api/resumes/${dbResumeId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       }

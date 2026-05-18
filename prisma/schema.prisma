@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,22 +6,20 @@ datasource db {
   provider = "postgresql"
 }
 
-// NextAuth Models
 model Account {
   id                String  @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -38,24 +33,21 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified    DateTime?
-  hashedPassword   String?
-  image            String?
-  role          Role      @default(USER)
-
-  stripeCustomerId String? @unique
-
-  accounts     Account[]
-  sessions     Session[]
-  resumes      Resume[]
-  subscription Subscription?
-
+  id                 String              @id @default(cuid())
+  name               String?
+  email              String?             @unique
+  emailVerified      DateTime?
+  image              String?
+  role               Role                @default(USER)
+  stripeCustomerId   String?             @unique
+  hashedPassword     String?
+  aiUsageLogs        AIUsageLog[]
+  accounts           Account[]
   purchasedLanguages PurchasedLanguage[]
   purchasedTemplates PurchasedTemplate[]
-  aiUsageLogs        AIUsageLog[]
+  resumes            Resume[]
+  sessions           Session[]
+  subscription       Subscription?
 }
 
 model VerificationToken {
@@ -66,27 +58,21 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
-// App Models
 model Subscription {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String    @id @default(cuid())
+  userId           String    @unique
   stripePriceId    String?
-  stripeSubId      String?  @unique
+  stripeSubId      String?   @unique
   status           String?
   currentPeriodEnd DateTime?
   planId           String?
-  plan             Plan?    @relation(fields: [planId], references: [id])
+  plan             Plan?     @relation(fields: [planId], references: [id])
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Plan {
   id            String         @id @default(cuid())
-  name          String         @unique // FREE, BASIC, PRO, GLOBAL
+  name          String         @unique
   price         Float
   stripePriceId String?        @unique
   subscriptions Subscription[]
@@ -95,48 +81,48 @@ model Plan {
 model Resume {
   id            String          @id @default(cuid())
   userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   title         String
   languageCode  String          @default("en")
   templateId    String
   targetCountry String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   sections      ResumeSection[]
 }
 
 model ResumeSection {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   resumeId String
-  resume   Resume  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
-  type     String // CONTACT, SUMMARY, EXPERIENCE, EDUCATION, SKILLS, etc.
-  content  Json    // Flexible JSON structure based on type
-  order    Int     @default(0)
+  type     String
+  content  Json
+  order    Int    @default(0)
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 }
 
 model Template {
-  id          String              @id @default(cuid())
-  name        String              @unique
-  thumbnail   String?
-  isPremium   Boolean             @default(false)
-  purchases   PurchasedTemplate[]
+  id        String              @id @default(cuid())
+  name      String              @unique
+  thumbnail String?
+  isPremium Boolean             @default(false)
+  purchases PurchasedTemplate[]
 }
 
 model Language {
-  id          String              @id @default(cuid())
-  code        String              @unique // en, de, fr, ja, zh, pt, es
-  name        String
-  isPremium   Boolean             @default(false)
-  purchases   PurchasedLanguage[]
+  id        String              @id @default(cuid())
+  code      String              @unique
+  name      String
+  isPremium Boolean             @default(false)
+  purchases PurchasedLanguage[]
 }
 
 model PurchasedLanguage {
   id         String   @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   languageId String
-  language   Language @relation(fields: [languageId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
+  language   Language @relation(fields: [languageId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, languageId])
 }
@@ -144,10 +130,10 @@ model PurchasedLanguage {
 model PurchasedTemplate {
   id         String   @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   templateId String
-  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, templateId])
 }
@@ -155,8 +141,13 @@ model PurchasedTemplate {
 model AIUsageLog {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   action    String
   tokens    Int
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum Role {
+  USER
+  ADMIN
 }

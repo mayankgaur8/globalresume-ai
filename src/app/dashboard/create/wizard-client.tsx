@@ -653,82 +653,140 @@ export function CreateWizard() {
   // ── Create resume + go to builder ─────────────────────────────────────────
 
   const handleFinish = async () => {
+    // ── Pre-flight validation ─────────────────────────────────────────────────
+    if (!contact.email?.trim()) {
+      toast("Please add your email address before creating the resume.", "error")
+      return
+    }
+    if (!contact.firstName?.trim() && !contact.lastName?.trim()) {
+      toast("Please add your name before creating the resume.", "error")
+      return
+    }
+    if (!selectedTemplate) {
+      toast("Please select a template before continuing.", "error")
+      return
+    }
+
     setIsCreating(true)
     try {
-      const langCode = filters.language === "German" ? "de"
-        : filters.language === "French" ? "fr"
+      const langCode =
+        filters.language === "German"     ? "de"
+        : filters.language === "French"   ? "fr"
         : filters.language === "Japanese" ? "ja"
-        : filters.language === "Spanish" ? "es"
+        : filters.language === "Spanish"  ? "es"
         : filters.language === "Portuguese" ? "pt"
         : "en"
 
-      // Map parsed data to builder-compatible section format
       const contactContent = {
-        firstName: contact.firstName || "",
-        lastName: contact.lastName || "",
-        email: contact.email || "",
-        phone: contact.phone || "",
-        address: "",
-        city: contact.city || "",
-        country: contact.country || "",
-        linkedin: contact.linkedin || "",
-        website: contact.website || "",
+        firstName:  contact.firstName  || "",
+        lastName:   contact.lastName   || "",
+        email:      contact.email      || "",
+        phone:      contact.phone      || "",
+        address:    "",
+        city:       contact.city       || "",
+        country:    contact.country    || "",
+        linkedin:   contact.linkedin   || "",
+        website:    contact.website    || "",
       }
 
       const experienceItems = (parsedResume?.experience ?? []).map((e, i) => ({
         id: `exp-${i}`,
-        company: e.company || "",
-        position: e.title || "",
-        startDate: e.startDate || "",
-        endDate: e.endDate || "",
-        current: e.current ?? false,
+        company:     e.company   || "",
+        position:    e.title     || "",
+        startDate:   e.startDate || "",
+        endDate:     e.endDate   || "",
+        current:     e.current   ?? false,
         description: e.bullets?.map((b) => `• ${b}`).join("\n") || "",
       }))
 
       const educationToSave = editedEducation.length > 0 ? editedEducation : (parsedResume?.education ?? [])
       const educationItems = educationToSave.map((e, i) => ({
-        id: `edu-${i}`,
+        id:          `edu-${i}`,
         institution: e.institution || "",
-        degree: e.degree || "",
-        field: e.field || "",
-        startDate: e.startDate || "",
-        endDate: e.endDate || "",
+        degree:      e.degree      || "",
+        field:       e.field       || "",
+        startDate:   e.startDate   || "",
+        endDate:     e.endDate     || "",
       }))
 
       const skillItems = (parsedResume?.skills.all ?? []).map((name, i) => ({
-        id: `skill-${i}`,
-        name,
-        level: "Intermediate",
+        id: `skill-${i}`, name, level: "Intermediate",
       }))
 
-      const sections: object[] = [
-        { type: "CONTACT",        content: contactContent,                 order: 0 },
-        { type: "SUMMARY",        content: { text: editedSummary || "" },  order: 1 },
-        { type: "EXPERIENCE",     content: { items: experienceItems },      order: 2 },
-        { type: "EDUCATION",      content: { items: educationItems },       order: 3 },
-        { type: "SKILLS",         content: { items: skillItems },           order: 4 },
-        { type: "LANGUAGES",      content: { items: parsedResume?.languages ?? [] }, order: 5 },
-        { type: "CERTIFICATIONS", content: { items: parsedResume?.certifications ?? [] }, order: 6 },
-        { type: "PROJECTS",       content: { items: parsedResume?.projects ?? [] },       order: 7 },
+      // Normalize language/cert/project items to ensure no stray parser types leak in
+      const langItems = (parsedResume?.languages ?? []).map((l, i) =>
+        typeof l === "string"
+          ? { id: `lang-${i}`, language: l, proficiency: "Professional" }
+          : { id: (l as { id?: string }).id || `lang-${i}`, ...(l as object) }
+      )
+      const certItems = (parsedResume?.certifications ?? []).map((c, i) =>
+        typeof c === "string"
+          ? { id: `cert-${i}`, name: c, issuer: "", date: "", url: "" }
+          : { id: (c as { id?: string }).id || `cert-${i}`, ...(c as object) }
+      )
+      const projItems = (parsedResume?.projects ?? []).map((p, i) =>
+        typeof p === "string"
+          ? { id: `proj-${i}`, name: p, description: "", url: "", startDate: "", endDate: "" }
+          : { id: (p as { id?: string }).id || `proj-${i}`, ...(p as object) }
+      )
+
+      const sections = [
+        { type: "CONTACT",        content: contactContent,                       order: 0 },
+        { type: "SUMMARY",        content: { text: editedSummary || "" },         order: 1 },
+        { type: "EXPERIENCE",     content: { items: experienceItems },             order: 2 },
+        { type: "EDUCATION",      content: { items: educationItems },              order: 3 },
+        { type: "SKILLS",         content: { items: skillItems },                  order: 4 },
+        { type: "LANGUAGES",      content: { items: langItems },                   order: 5 },
+        { type: "CERTIFICATIONS", content: { items: certItems },                   order: 6 },
+        { type: "PROJECTS",       content: { items: projItems },                   order: 7 },
       ]
+
+      const payload = {
+        title: contact.firstName
+          ? `${contact.firstName}${contact.lastName ? ` ${contact.lastName}` : ""}'s Resume`
+          : "My Resume",
+        languageCode:  langCode,
+        templateId:    selectedTemplate,
+        targetCountry: "US",
+        sections,
+      }
 
       const res = await fetch("/api/resumes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: contact.firstName ? `${contact.firstName}'s Resume` : "My Resume",
-          languageCode: langCode,
-          templateId: selectedTemplate,
-          targetCountry: "US",
-          sections,
-        }),
+        body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error("Failed to create resume")
-      const created = await res.json()
-      toast("Resume created!", "success")
-      router.push(`/dashboard/builder/${created.id}`)
-    } catch {
-      toast("Could not create resume. Please try again.", "error")
+
+      // Always try to read the JSON body so we can show the real error
+      let data: { success?: boolean; message?: string; errorCode?: string; resume?: { id: string }; id?: string } = {}
+      try { data = await res.json() } catch { /* non-JSON body */ }
+
+      if (!res.ok) {
+        const serverMsg = data.message || `Server error ${res.status}`
+        if (res.status === 401) {
+          toast("Please sign in to create your resume.", "error")
+          router.push("/login")
+          return
+        }
+        if (res.status === 403 && data.errorCode === "RESUME_LIMIT_REACHED") {
+          toast(serverMsg, "error")
+          return
+        }
+        if (res.status === 429) {
+          toast("Too many requests — please wait a moment and try again.", "error")
+          return
+        }
+        throw new Error(serverMsg)
+      }
+
+      const resumeId = data.resume?.id ?? (data as { id?: string }).id
+      if (!resumeId) throw new Error("Server returned success but no resume ID.")
+
+      toast("Resume created! Opening builder…", "success")
+      router.push(`/dashboard/builder/${resumeId}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not create resume. Please try again."
+      toast(msg, "error")
     } finally {
       setIsCreating(false)
     }
@@ -742,6 +800,9 @@ export function CreateWizard() {
     if (step === "upload") {
       if (uploadMode === "file") return uploadedFile !== null
       return pasteText.trim().length > 50
+    }
+    if (step === "contact") {
+      return !!(contact.email?.trim() && (contact.firstName?.trim() || contact.lastName?.trim()))
     }
     return true
   }
