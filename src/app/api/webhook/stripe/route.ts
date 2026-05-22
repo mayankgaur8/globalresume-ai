@@ -3,6 +3,8 @@ import { NextResponse } from "next/server"
 import { stripe, stripeEnabled } from "@/lib/stripe"
 import prisma from "@/lib/prisma"
 import Stripe from "stripe"
+import { track } from "@/lib/analytics/server"
+import { sendUpgradeConfirmationEmail, sendPaymentFailedEmail } from "@/lib/email"
 
 export async function POST(req: Request) {
   if (!stripeEnabled || !stripe) {
@@ -105,6 +107,13 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
       data: { stripeCustomerId: session.customer as string },
     })
   }
+
+  // Analytics + lifecycle email (fire-and-forget — never block the webhook response)
+  track(userId, "subscription_activated", { plan: plan?.name ?? "unknown" })
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } })
+  if (user?.email && plan?.name) {
+    void sendUpgradeConfirmationEmail(user.email, user.name ?? "there", plan.name)
+  }
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -138,6 +147,22 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice) {
     where: { stripeSubId: subId },
     data: { status: "past_due" },
   })
+
+  // Notify the subscriber and track churn signal
+  const subscription = await prisma.subscription.findFirst({
+    where: { stripeSubId: subId },
+    select: { userId: true, plan: { select: { name: true } } },
+  })
+  if (subscription) {
+    track(subscription.userId, "payment_failed", { plan: subscription.plan?.name ?? "unknown" })
+    const user = await prisma.user.findUnique({
+      where: { id: subscription.userId },
+      select: { email: true, name: true },
+    })
+    if (user?.email) {
+      void sendPaymentFailedEmail(user.email, user.name ?? "there")
+    }
+  }
 }
 
 async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
@@ -157,7 +182,13 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
 }
 
 async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
-  const freePlan = await prisma.plan.findUnique({ where: { name: "FREE" } })
+  const [freePlan, subscription] = await Promise.all([
+    prisma.plan.findUnique({ where: { name: "FREE" } }),
+    prisma.subscription.findFirst({
+      where: { stripeSubId: sub.id },
+      select: { userId: true, plan: { select: { name: true } } },
+    }),
+  ])
 
   await prisma.subscription.updateMany({
     where: { stripeSubId: sub.id },
@@ -169,4 +200,8 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
       planId: freePlan?.id,
     },
   })
+
+  if (subscription) {
+    track(subscription.userId, "subscription_cancelled", { plan: subscription.plan?.name ?? "unknown" })
+  }
 }
