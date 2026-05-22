@@ -31,7 +31,7 @@ export default async function AdminLanguagesPage() {
                 </tr>
               </thead>
               <tbody>
-                {languages.map((lang) => (
+                {languages.map((lang: any) => (
                   <tr key={lang.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="py-3 pr-4 font-medium text-white">{lang.name}</td>
                     <td className="py-3 pr-4 font-mono text-xs text-slate-400">{lang.code}</td>
