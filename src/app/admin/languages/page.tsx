@@ -1,9 +1,14 @@
 import prisma from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Languages, Lock, Unlock } from "lucide-react"
+import type { Prisma } from "@prisma/client"
+
+type AdminLanguage = Prisma.LanguageGetPayload<{
+  include: { _count: { select: { purchases: true } } }
+}>
 
 export default async function AdminLanguagesPage() {
-  const languages = await prisma.language.findMany({
+  const languages: AdminLanguage[] = await prisma.language.findMany({
     include: { _count: { select: { purchases: true } } },
     orderBy: { name: "asc" },
   })
@@ -31,7 +36,7 @@ export default async function AdminLanguagesPage() {
                 </tr>
               </thead>
               <tbody>
-                {languages.map((lang: any) => (
+                {languages.map((lang: AdminLanguage) => (
                   <tr key={lang.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="py-3 pr-4 font-medium text-white">{lang.name}</td>
                     <td className="py-3 pr-4 font-mono text-xs text-slate-400">{lang.code}</td>

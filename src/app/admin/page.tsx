@@ -36,12 +36,9 @@ function StatCard({
 export default async function AdminDashboard() {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
 
   const [
     totalUsers,
-    newUsersThisMonth,
-    newUsersPrevMonth,
     totalResumes,
     newResumesThisMonth,
     activeSubscriptions,
@@ -50,8 +47,6 @@ export default async function AdminDashboard() {
     totalAiLogs,
     recentUsers,
   ] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { id: { not: undefined } } }), // placeholder — no createdAt on User
     prisma.user.count(),
     prisma.resume.count(),
     prisma.resume.count({ where: { createdAt: { gte: monthStart } } }),

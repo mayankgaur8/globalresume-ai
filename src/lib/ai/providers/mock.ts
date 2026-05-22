@@ -45,15 +45,18 @@ export class MockAIProvider implements AIProvider {
   }
 
   private generateDefault(prompt: string, maxTokens: number): string {
+    let content: string
+
     if (prompt.toLowerCase().includes("json")) {
-      return '{"score": 75, "suggestions": ["Add more quantified achievements", "Include relevant keywords"]}'
+      content = '{"score": 75, "suggestions": ["Add more quantified achievements", "Include relevant keywords"]}'
+    } else if (prompt.toLowerCase().includes("cover letter")) {
+      content = "Dear Hiring Manager,\n\nI am writing to express my interest in this position. My background makes me a strong fit for your team.\n\nSincerely,\n[Candidate]"
+    } else if (prompt.toLowerCase().includes("summary")) {
+      content = "Results-driven professional with demonstrated expertise delivering measurable outcomes. Strong collaborator with a track record of driving team success."
+    } else {
+      content = `Professional content generated for: ${prompt.slice(0, 50)}...`
     }
-    if (prompt.toLowerCase().includes("cover letter")) {
-      return "Dear Hiring Manager,\n\nI am writing to express my interest in this position. My background makes me a strong fit for your team.\n\nSincerely,\n[Candidate]"
-    }
-    if (prompt.toLowerCase().includes("summary")) {
-      return "Results-driven professional with demonstrated expertise delivering measurable outcomes. Strong collaborator with a track record of driving team success."
-    }
-    return `Professional content generated for: ${prompt.slice(0, 50)}...`
+
+    return content.split(/\s+/).slice(0, Math.max(1, maxTokens)).join(" ")
   }
 }

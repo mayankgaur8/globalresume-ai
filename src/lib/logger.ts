@@ -32,7 +32,6 @@ function emit(level: LogLevel, message: string, ctx: LogContext = {}) {
   } else {
     const prefix = `[${level.toUpperCase()}]`
     const ctxStr = Object.keys(ctx).length ? ` ${JSON.stringify(ctx)}` : ""
-    // eslint-disable-next-line no-console
     console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
       `${prefix} ${message}${ctxStr}`
     )

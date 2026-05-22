@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { LayoutDashboard, Users, CreditCard, Languages, FileText, Settings, ShieldAlert } from "lucide-react";
+import { LayoutDashboard, Users, CreditCard, Languages, FileText, ShieldAlert } from "lucide-react";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const session = await auth();

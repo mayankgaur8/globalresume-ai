@@ -744,6 +744,7 @@ const PREVIEW_COMPONENTS: Record<string, React.ReactNode> = {
   "Japanese Rirekisho": <ResumePreviewJapanese />,
   "Spanish CV": <ResumePreviewSpanish />,
   "Portuguese CV": <ResumePreviewPortuguese />,
+  "Global Professional": <ResumePreviewGlobal />,
 }
 
 // Fallback for "Global Professional" or any unmapped template

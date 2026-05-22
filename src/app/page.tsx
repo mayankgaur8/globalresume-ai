@@ -2,7 +2,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
-  Globe, FileText, CheckCircle2, Zap, ArrowRight, Languages,
+  Globe, FileText, CheckCircle2, ArrowRight,
   Star, Shield, BarChart3, Sparkles, Users, TrendingUp,
   ChevronDown, Check, BrainCircuit, Globe2, PenTool,
 } from "lucide-react"

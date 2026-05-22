@@ -244,6 +244,7 @@ export function ResumePDF({ data, watermark = false }: ResumePDFProps) {
         <View style={s.headerWrap} fixed={false}>
           {hasPhoto && (
             <View style={s.photoCol}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf ImageProps has no alt prop. */}
               <Image src={contact.photoDataUrl!} style={s.photoImg} />
             </View>
           )}
