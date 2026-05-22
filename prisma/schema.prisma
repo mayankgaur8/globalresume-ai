@@ -48,6 +48,7 @@ model User {
   resumes            Resume[]
   sessions           Session[]
   subscription       Subscription?
+  razorpayOrders     RazorpayOrder[]
 }
 
 model VerificationToken {
@@ -73,11 +74,12 @@ model Subscription {
 }
 
 model Plan {
-  id            String         @id @default(cuid())
-  name          String         @unique
-  price         Float
-  stripePriceId String?        @unique
-  subscriptions Subscription[]
+  id              String          @id @default(cuid())
+  name            String          @unique
+  price           Float
+  stripePriceId   String?         @unique
+  subscriptions   Subscription[]
+  razorpayOrders  RazorpayOrder[]
 }
 
 model Resume {
@@ -157,6 +159,23 @@ model AIUsageLog {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+model RazorpayOrder {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  userId    String
+  planName  String
+  amount    Int
+  currency  String   @default("USD")
+  status    String   @default("created")
+  paymentId String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      Plan?    @relation(fields: [planName], references: [name])
+
+  @@index([userId])
+  @@index([orderId])
 }
 
 enum Role {

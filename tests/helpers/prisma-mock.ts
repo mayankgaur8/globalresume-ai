@@ -10,6 +10,7 @@ export type DeepPartial<T> = T extends object
 
 export function createPrismaMock() {
   return {
+    $transaction: vi.fn().mockImplementation((ops: unknown[]) => Promise.all(ops)),
     user: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
@@ -47,6 +48,11 @@ export function createPrismaMock() {
       findFirst: vi.fn(),
       upsert: vi.fn(),
       updateMany: vi.fn(),
+    },
+    razorpayOrder: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
     },
     aIUsageLog: {
       create: vi.fn(),

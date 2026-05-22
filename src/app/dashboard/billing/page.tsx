@@ -3,12 +3,11 @@ import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import prisma from "@/lib/prisma"
 import { getUserPlanLimits } from "@/lib/access"
-import { stripeEnabled } from "@/lib/stripe"
+import { razorpayEnabled } from "@/lib/razorpay"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CheckCircle2, Crown, AlertTriangle } from "lucide-react"
-import { CheckoutButton } from "./checkout-button"
-import { PortalButton } from "./portal-button"
+import { RazorpayCheckoutButton } from "./razorpay-checkout-button"
 import Link from "next/link"
 
 export const metadata: Metadata = { title: "Billing & Plan" }
@@ -19,7 +18,6 @@ const PLANS = [
     label: "Free",
     price: "$0",
     period: "forever",
-    priceId: null as string | null,
     features: [
       "3 Resumes",
       "1 Template (Modern)",
@@ -34,7 +32,6 @@ const PLANS = [
     label: "Basic",
     price: "$9",
     period: "/month",
-    priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_BASIC ?? null,
     features: [
       "10 Resumes",
       "3 Templates",
@@ -49,7 +46,6 @@ const PLANS = [
     label: "Pro",
     price: "$15",
     period: "/month",
-    priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? null,
     features: [
       "Unlimited resumes",
       "8 Premium templates",
@@ -65,7 +61,6 @@ const PLANS = [
     label: "Global",
     price: "$29",
     period: "/month",
-    priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_GLOBAL ?? null,
     features: [
       "Everything in Pro",
       "All 12 templates",
@@ -76,7 +71,13 @@ const PLANS = [
     ],
     highlight: false,
   },
-]
+] as const
+
+type PlanName = (typeof PLANS)[number]["name"]
+
+function isPaidPlanName(name: PlanName): name is Exclude<PlanName, "FREE"> {
+  return name !== "FREE"
+}
 
 export default async function BillingPage({
   searchParams,
@@ -96,7 +97,6 @@ export default async function BillingPage({
 
   const sp = await searchParams
   const currentPlan = limits.plan
-  const hasActivePaidPlan = currentPlan !== "FREE" && currentPlan !== "ADMIN"
   const isExpired = subscription?.status === "canceled" || subscription?.status === "past_due"
 
   return (
@@ -125,12 +125,13 @@ export default async function BillingPage({
           </p>
         </div>
       )}
-      {!stripeEnabled && (
+      {!razorpayEnabled && (
         <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
           <AlertTriangle className="h-5 w-5 text-slate-500 shrink-0" />
           <p className="text-sm text-slate-600">
-            <strong>Demo mode:</strong> Stripe is not configured. Add{" "}
-            <code className="bg-slate-100 px-1 rounded text-xs">STRIPE_SECRET_KEY</code> to enable
+            <strong>Demo mode:</strong> Razorpay is not configured. Add{" "}
+            <code className="bg-slate-100 px-1 rounded text-xs">RAZORPAY_KEY_ID</code> and{" "}
+            <code className="bg-slate-100 px-1 rounded text-xs">RAZORPAY_KEY_SECRET</code> to enable
             real payments.
           </p>
         </div>
@@ -173,11 +174,6 @@ export default async function BillingPage({
                 year: "numeric",
               })}
             </p>
-          )}
-          {hasActivePaidPlan && stripeEnabled && (
-            <div className="mt-3 flex gap-2">
-              <PortalButton />
-            </div>
           )}
         </CardContent>
       </Card>
@@ -248,15 +244,19 @@ export default async function BillingPage({
                   >
                     Current Plan
                   </Button>
-                ) : plan.priceId && stripeEnabled ? (
-                  <CheckoutButton priceId={plan.priceId} planName={plan.label} highlight={plan.highlight} />
-                ) : plan.name !== "FREE" ? (
+                ) : isPaidPlanName(plan.name) && razorpayEnabled ? (
+                  <RazorpayCheckoutButton
+                    planName={plan.name}
+                    planLabel={plan.label}
+                    highlight={plan.highlight}
+                  />
+                ) : isPaidPlanName(plan.name) ? (
                   <Button
                     disabled
                     variant="outline"
                     className={`w-full ${plan.highlight ? "border-white/30 text-white" : ""}`}
                   >
-                    Configure Stripe to upgrade
+                    Configure Razorpay to upgrade
                   </Button>
                 ) : null}
               </div>
@@ -266,7 +266,7 @@ export default async function BillingPage({
       </div>
 
       <p className="text-center text-xs text-slate-400">
-        Payments are processed securely by Stripe. Cancel anytime.{" "}
+        Payments are processed securely by Razorpay. Cancel anytime.{" "}
         <Link href="/#pricing" className="underline hover:text-slate-600">
           See full feature comparison
         </Link>
