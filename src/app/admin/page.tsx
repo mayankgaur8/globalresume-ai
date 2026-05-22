@@ -65,9 +65,15 @@ export default async function AdminDashboard() {
     }),
   ])
 
+  type AdminPlan = { id: string; name: string }
+
   // Resolve plan names for breakdown
-  const plans = await prisma.plan.findMany()
-  const planMap = Object.fromEntries(plans.map((p) => [p.id, p.name]))
+  const plans: AdminPlan[] = await prisma.plan.findMany({
+    select: { id: true, name: true },
+  })
+  const planMap: Record<string, string> = Object.fromEntries(
+    plans.map((p: AdminPlan) => [p.id, p.name])
+  )
 
   const breakdownByName: Record<string, number> = {}
   for (const row of planBreakdown) {

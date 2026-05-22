@@ -2,8 +2,16 @@ import prisma from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CreditCard } from "lucide-react"
 
+type AdminSubscription = {
+  id: string
+  status: string | null
+  stripeSubId: string | null
+  user: { name: string | null; email: string | null } | null
+  plan: { name: string } | null
+}
+
 export default async function AdminSubscriptionsPage() {
-  const subscriptions = await prisma.subscription.findMany({
+  const subscriptions: AdminSubscription[] = await prisma.subscription.findMany({
     include: {
       user: { select: { name: true, email: true } },
       plan: true,

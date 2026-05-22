@@ -3,8 +3,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users } from "lucide-react"
 import { ManualUnlockButton } from "./manual-unlock-button"
 
+type AdminUser = {
+  id: string
+  name: string | null
+  email: string | null
+  role: "USER" | "ADMIN"
+  subscription: { plan: { name: string } | null } | null
+  resumes: { id: string }[]
+}
+
 export default async function AdminUsersPage() {
-  const users = await prisma.user.findMany({
+  const users: AdminUser[] = await prisma.user.findMany({
     include: {
       subscription: { include: { plan: true } },
       resumes: { select: { id: true } },

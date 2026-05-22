@@ -8,9 +8,11 @@ const nextConfig: NextConfig = {
 export default withSentryConfig(nextConfig, {
   // Suppress verbose Sentry build output
   silent: !process.env.CI,
-  // Only upload source maps when DSN is configured (avoids errors in local dev)
+  // Auth token — when absent, source-map upload is skipped silently
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  // Only upload source maps when both DSN and auth token are configured
   sourcemaps: {
-    disable: !process.env.SENTRY_DSN,
+    disable: !process.env.SENTRY_DSN || !process.env.SENTRY_AUTH_TOKEN,
   },
   // Disable Sentry build-time telemetry
   telemetry: false,

@@ -2,8 +2,15 @@ import prisma from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, Lock, Unlock } from "lucide-react"
 
+type AdminTemplate = {
+  id: string
+  name: string
+  isPremium: boolean
+  _count: { purchases: number }
+}
+
 export default async function AdminTemplatesPage() {
-  const templates = await prisma.template.findMany({
+  const templates: AdminTemplate[] = await prisma.template.findMany({
     include: { _count: { select: { purchases: true } } },
     orderBy: { name: "asc" },
   })
