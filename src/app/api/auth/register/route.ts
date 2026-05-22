@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
-import { Prisma } from "@prisma/client"
 import prisma from "@/lib/prisma"
 import { rateLimit, getClientIp } from "@/lib/rate-limit"
 
@@ -28,8 +27,17 @@ function errorResponse(message: string, status: number, code: RegisterErrorCode,
   return NextResponse.json({ message, code }, { status, headers })
 }
 
-function isPrismaKnownError(err: unknown): err is Prisma.PrismaClientKnownRequestError {
-  return err instanceof Prisma.PrismaClientKnownRequestError
+type PrismaKnownError = { code: string; meta?: Record<string, unknown>; message: string }
+
+function isPrismaKnownError(err: unknown): err is PrismaKnownError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "name" in err &&
+    (err as { name?: unknown }).name === "PrismaClientKnownRequestError" &&
+    "code" in err &&
+    typeof (err as { code?: unknown }).code === "string"
+  )
 }
 
 function getErrorCode(err: unknown) {

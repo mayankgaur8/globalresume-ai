@@ -1,11 +1,14 @@
 import prisma from "@/lib/prisma"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Languages, Lock, Unlock } from "lucide-react"
-import type { Prisma } from "@prisma/client"
 
-type AdminLanguage = Prisma.LanguageGetPayload<{
-  include: { _count: { select: { purchases: true } } }
-}>
+type AdminLanguage = {
+  id: string
+  code: string
+  name: string
+  isPremium: boolean
+  _count: { purchases: number }
+}
 
 export default async function AdminLanguagesPage() {
   const languages: AdminLanguage[] = await prisma.language.findMany({
