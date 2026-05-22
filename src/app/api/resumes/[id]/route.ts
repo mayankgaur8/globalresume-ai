@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import prisma from "@/lib/prisma"
+import { canAccessTemplate } from "@/lib/access"
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -40,6 +41,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     templateId?: string
     targetCountry?: string
     sections?: Array<{ id?: string; type: string; content: unknown; order: number }>
+  }
+
+  // Server-side template access enforcement on template change
+  if (templateId && session.user.role !== "ADMIN") {
+    const templateOk = await canAccessTemplate(session.user.id, templateId)
+    if (!templateOk) {
+      return NextResponse.json(
+        { success: false, errorCode: "TEMPLATE_ACCESS_DENIED", message: "Upgrade required to use this template." },
+        { status: 403 }
+      )
+    }
   }
 
   await prisma.resume.update({

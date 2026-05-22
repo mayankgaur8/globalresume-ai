@@ -5,21 +5,40 @@ import prisma from "@/lib/prisma"
 import { canUseAI } from "@/lib/access"
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? ""
+const AI_MODEL = "gpt-4o-mini"
 const aiEnabled =
   OPENAI_KEY !== "" && OPENAI_KEY !== "sk-dummy" && OPENAI_KEY.startsWith("sk-")
 
-// ── OpenAI call with retry ────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
   role: "system" | "user" | "assistant"
   content: string
 }
 
+interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  isEstimated: boolean
+}
+
+interface OpenAIResponse {
+  choices: Array<{ message: { content: string } }>
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
+// ── OpenAI call ───────────────────────────────────────────────────────────────
+
 async function callOpenAI(
   messages: ChatMessage[],
   maxTokens = 500,
   attempt = 1
-): Promise<string> {
+): Promise<{ content: string; usage: TokenUsage }> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -27,7 +46,7 @@ async function callOpenAI(
       Authorization: `Bearer ${OPENAI_KEY}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: AI_MODEL,
       messages,
       max_tokens: maxTokens,
       temperature: 0.7,
@@ -35,7 +54,6 @@ async function callOpenAI(
   })
 
   if (res.status === 429 && attempt < 3) {
-    // Retry with exponential backoff on rate limit
     await new Promise((r) => setTimeout(r, 1000 * attempt))
     return callOpenAI(messages, maxTokens, attempt + 1)
   }
@@ -45,11 +63,26 @@ async function callOpenAI(
     throw new Error(`OpenAI API error ${res.status}: ${err}`)
   }
 
-  const data = await res.json() as {
-    choices: Array<{ message: { content: string } }>
-    usage: { total_tokens: number }
-  }
-  return data.choices[0]?.message?.content ?? ""
+  const data = (await res.json()) as OpenAIResponse
+  const content = data.choices[0]?.message?.content ?? ""
+
+  // Use actual token counts from the API response; fall back to estimates only
+  // if the field is absent (some proxies strip it).
+  const usage: TokenUsage = data.usage
+    ? {
+        inputTokens: data.usage.prompt_tokens,
+        outputTokens: data.usage.completion_tokens,
+        totalTokens: data.usage.total_tokens,
+        isEstimated: false,
+      }
+    : {
+        inputTokens: Math.ceil(maxTokens * 0.6),
+        outputTokens: Math.ceil(maxTokens * 0.4),
+        totalTokens: maxTokens,
+        isEstimated: true,
+      }
+
+  return { content, usage }
 }
 
 // ── Credit guard ──────────────────────────────────────────────────────────────
@@ -59,8 +92,23 @@ async function requireAIAccess(userId: string) {
   if (!check.allowed) throw new Error(check.reason ?? "AI limit reached")
 }
 
-async function logUsage(userId: string, action: string, tokens: number) {
-  await prisma.aIUsageLog.create({ data: { userId, action, tokens } })
+async function logUsage(
+  userId: string,
+  action: string,
+  usage: TokenUsage
+) {
+  await prisma.aIUsageLog.create({
+    data: {
+      userId,
+      action,
+      tokens: usage.totalTokens,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      isEstimated: usage.isEstimated,
+      provider: "openai",
+      model: AI_MODEL,
+    },
+  })
 }
 
 // ── Public actions ─────────────────────────────────────────────────────────────
@@ -89,7 +137,7 @@ export async function generateSummary(
   }
   const targetLang = langLabel[language] ?? "English"
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -104,7 +152,7 @@ export async function generateSummary(
     200
   )
 
-  await logUsage(session.user.id, "GENERATE_SUMMARY", 150)
+  await logUsage(session.user.id, "GENERATE_SUMMARY", usage)
   return content
 }
 
@@ -118,11 +166,10 @@ export async function rewriteBullet(
   await requireAIAccess(session.user.id)
 
   if (!aiEnabled) {
-    // Return the original bullet unmodified — never expose internal debug text
     return bullet
   }
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -137,7 +184,7 @@ export async function rewriteBullet(
     100
   )
 
-  await logUsage(session.user.id, "REWRITE_BULLET", 80)
+  await logUsage(session.user.id, "REWRITE_BULLET", usage)
   return content.replace(/^[-•]\s*/, "").trim()
 }
 
@@ -166,7 +213,7 @@ export async function translateContent(
   }
   const targetName = langNames[targetLanguage] ?? targetLanguage
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -177,7 +224,7 @@ export async function translateContent(
     800
   )
 
-  await logUsage(session.user.id, "TRANSLATE", 400)
+  await logUsage(session.user.id, "TRANSLATE", usage)
   return content
 }
 
@@ -201,7 +248,7 @@ export async function optimizeForATS(
     }
   }
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -224,10 +271,12 @@ Return ONLY valid JSON in this format: {"score": 85, "suggestions": ["...", "...
     400
   )
 
-  await logUsage(session.user.id, "ATS_OPTIMIZE", 300)
+  await logUsage(session.user.id, "ATS_OPTIMIZE", usage)
 
   try {
-    const parsed = JSON.parse(content) as { score: number; suggestions: string[] }
+    // Strip markdown code fences GPT sometimes wraps around JSON
+    const jsonStr = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim()
+    const parsed = JSON.parse(jsonStr) as { score: number; suggestions: string[] }
     return parsed
   } catch {
     return { score: 70, suggestions: ["Unable to parse AI response. Try again."] }
@@ -250,7 +299,7 @@ export async function generateProjectDescription(
     return `${title ? `${title}: ` : ""}Built and delivered a production-grade solution${techPart}${rolePart}. Focused on system design, performance optimization, and cross-functional collaboration to achieve measurable impact.`
   }
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -265,7 +314,7 @@ export async function generateProjectDescription(
     150
   )
 
-  await logUsage(session.user.id, "GENERATE_PROJECT_DESC", 120)
+  await logUsage(session.user.id, "GENERATE_PROJECT_DESC", usage)
   return content.trim()
 }
 
@@ -285,7 +334,7 @@ export async function generateLinkedInBio(
     return `${jobTitle} | Passionate about delivering results and driving innovation.\n\n${summary || "Experienced professional with a track record of success."}\n\nCore competencies: ${topSkills}\n\nOpen to new opportunities. Let's connect!`
   }
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -300,7 +349,7 @@ export async function generateLinkedInBio(
     300
   )
 
-  await logUsage(session.user.id, "GENERATE_LINKEDIN_BIO", 200)
+  await logUsage(session.user.id, "GENERATE_LINKEDIN_BIO", usage)
   return content.trim()
 }
 
@@ -318,7 +367,7 @@ export async function generateCoverLetter(
     return `Dear Hiring Manager,\n\nI am writing to express my strong interest in the ${jobTitle} position at ${company}. With my professional background and demonstrated expertise, I am confident I would be a valuable addition to your team and contribute meaningfully from day one.\n\n${resumeSummary ? resumeSummary + "\n\n" : ""}I would welcome the opportunity to discuss how my skills and experience align with your needs. Thank you for your time and consideration.\n\nSincerely,\n[Your Name]`
   }
 
-  const content = await callOpenAI(
+  const { content, usage } = await callOpenAI(
     [
       {
         role: "system",
@@ -333,6 +382,6 @@ export async function generateCoverLetter(
     600
   )
 
-  await logUsage(session.user.id, "COVER_LETTER", 400)
+  await logUsage(session.user.id, "COVER_LETTER", usage)
   return content
 }

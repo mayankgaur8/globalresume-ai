@@ -68,6 +68,8 @@ model Subscription {
   planId           String?
   plan             Plan?     @relation(fields: [planId], references: [id])
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stripeSubId])
 }
 
 model Plan {
@@ -89,6 +91,9 @@ model Resume {
   updatedAt     DateTime        @updatedAt
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   sections      ResumeSection[]
+
+  @@index([userId])
+  @@index([updatedAt])
 }
 
 model ResumeSection {
@@ -139,12 +144,19 @@ model PurchasedTemplate {
 }
 
 model AIUsageLog {
-  id        String   @id @default(cuid())
-  userId    String
-  action    String
-  tokens    Int
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  userId       String
+  action       String
+  tokens       Int
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  isEstimated  Boolean  @default(false)
+  provider     String   @default("openai")
+  model        String   @default("gpt-4o-mini")
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 enum Role {

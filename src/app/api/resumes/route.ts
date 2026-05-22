@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import prisma from "@/lib/prisma"
-import { getUserPlanLimits } from "@/lib/access"
+import { getUserPlanLimits, canAccessTemplate } from "@/lib/access"
 import { rateLimit } from "@/lib/rate-limit"
 
 const isDev = process.env.NODE_ENV !== "production"
@@ -108,6 +108,12 @@ export async function POST(req: Request) {
         403,
         "RESUME_LIMIT_REACHED"
       )
+    }
+
+    // Server-side template access enforcement — never trust the client-side lock
+    const templateOk = await canAccessTemplate(session.user.id, templateId.trim())
+    if (!templateOk) {
+      return apiError("Upgrade required to use this template.", 403, "TEMPLATE_ACCESS_DENIED")
     }
 
     // Validate section payload size (guard against huge photo data URLs)
