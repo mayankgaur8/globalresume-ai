@@ -162,7 +162,7 @@ describe("POST /api/payments/razorpay/create-order", () => {
     const { razorpay } = await import("@/lib/razorpay")
     const rzpMock = razorpay as NonNullable<typeof razorpay>
     vi.mocked(rzpMock.orders.create).mockResolvedValueOnce(
-      { id: "order_new123", amount: 1500, currency: "USD" } as unknown as Awaited<
+      { id: "order_new123", amount: 129900, currency: "INR" } as unknown as Awaited<
         ReturnType<typeof rzpMock.orders.create>
       >
     )
@@ -170,9 +170,10 @@ describe("POST /api/payments/razorpay/create-order", () => {
     const { POST } = await import("@/app/api/payments/razorpay/create-order/route")
     const res = await POST(makeApiRequest("/api/payments/razorpay/create-order", { planName: "PRO" }))
     expect(res.status).toBe(200)
-    const data = (await res.json()) as { orderId: string; amount: number }
+    const data = (await res.json()) as { orderId: string; amount: number; currency: string }
     expect(data.orderId).toBe("order_new123")
-    expect(data.amount).toBe(1500)
+    expect(data.amount).toBe(129900)
+    expect(data.currency).toBe("INR")
   })
 })
 

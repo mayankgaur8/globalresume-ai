@@ -88,7 +88,7 @@ const TESTIMONIALS = [
 const PLANS = [
   {
     name: "Free",
-    price: "$0",
+    price: "₹0",
     period: "forever",
     description: "Start building your first resume",
     features: ["1 Basic Template (Modern)", "English Only", "PDF with Watermark", "Resume Builder"],
@@ -99,7 +99,7 @@ const PLANS = [
   },
   {
     name: "Basic",
-    price: "$9",
+    price: "₹799",
     period: "/month",
     description: "For focused job seekers",
     features: ["3 Templates", "1 Language of Your Choice", "Clean PDF Export (No Watermark)", "AI Summary Generator"],
@@ -110,7 +110,7 @@ const PLANS = [
   },
   {
     name: "Pro",
-    price: "$15",
+    price: "₹1,299",
     period: "/month",
     description: "For international applicants",
     features: ["8 Premium Templates", "3 Languages", "AI Resume Rewriter", "ATS Score Checker", "Cover Letter Generator"],
@@ -121,10 +121,10 @@ const PLANS = [
   },
   {
     name: "Global",
-    price: "$29",
+    price: "₹2,499",
     period: "/month",
     description: "Unlimited global applications",
-    features: ["All 12 Templates", "All 7 Languages", "AI Translation Engine", "LinkedIn Summary Generator", "Priority Support"],
+    features: ["All 17 Templates", "All 7 Languages", "AI Translation Engine", "Cover Letter AI", "Priority Support"],
     cta: "Go Global",
     href: "/signup",
     highlight: false,
@@ -641,7 +641,7 @@ export default function HomePage() {
             ))}
           </div>
           <p className="text-center text-sm text-slate-400 mt-8">
-            All plans include a 7-day free trial. No credit card required to start. Cancel anytime.
+            Prices in INR · Payments via Razorpay · No credit card required to start · Cancel anytime.
           </p>
         </div>
       </section>

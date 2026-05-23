@@ -4,15 +4,15 @@
 
 export const FIXTURES = {
   plans: {
-    free:   { id: "plan-free",   name: "FREE",   price: 0,  stripePriceId: null },
-    basic:  { id: "plan-basic",  name: "BASIC",  price: 9,  stripePriceId: "price_basic" },
-    pro:    { id: "plan-pro",    name: "PRO",    price: 15, stripePriceId: "price_pro" },
-    global: { id: "plan-global", name: "GLOBAL", price: 29, stripePriceId: "price_global" },
+    free:   { id: "plan-free",   name: "FREE",   price: 0,   stripePriceId: null },
+    basic:  { id: "plan-basic",  name: "BASIC",  price: 799, stripePriceId: null },
+    pro:    { id: "plan-pro",    name: "PRO",    price: 1299, stripePriceId: null },
+    global: { id: "plan-global", name: "GLOBAL", price: 2499, stripePriceId: null },
   },
 
   templates: {
-    free:    { id: "tmpl-minimal", name: "minimal",  isPremium: false },
-    premium: { id: "tmpl-premium", name: "executive", isPremium: true  },
+    free:    { id: "tmpl-minimal", name: "minimal",   isPremium: false },
+    premium: { id: "tmpl-premium", name: "executive",  isPremium: true  },
   },
 
   users: {
@@ -21,6 +21,12 @@ export const FIXTURES = {
       email: "free@test.com",
       role: "USER" as const,
       subscription: { plan: { name: "FREE" } },
+    },
+    basicUser: {
+      id: "basic-user-id",
+      email: "basic@test.com",
+      role: "USER" as const,
+      subscription: { plan: { name: "BASIC" } },
     },
     proUser: {
       id: "pro-user-id",
@@ -38,6 +44,13 @@ export const FIXTURES = {
       id: "admin-id",
       email: "admin@test.com",
       role: "ADMIN" as const,
+      subscription: null,
+    },
+    // USER-role account that gets ADMIN limits via email bypass
+    adminEmailUser: {
+      id: "admin-email-id",
+      email: "mayankgaur.8@gmail.com",
+      role: "USER" as const,
       subscription: null,
     },
   },

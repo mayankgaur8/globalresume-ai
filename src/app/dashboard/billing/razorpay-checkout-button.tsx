@@ -9,6 +9,8 @@ interface Props {
   planName: string
   planLabel: string
   highlight?: boolean
+  size?: "default" | "sm"
+  onSuccess?: () => void
 }
 
 declare global {
@@ -53,7 +55,7 @@ function loadRazorpayScript(): Promise<boolean> {
   })
 }
 
-export function RazorpayCheckoutButton({ planName, planLabel, highlight }: Props) {
+export function RazorpayCheckoutButton({ planName, planLabel, highlight, size = "default", onSuccess }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -105,6 +107,7 @@ export function RazorpayCheckoutButton({ planName, planLabel, highlight }: Props
                 throw new Error(data.error ?? "Payment verification failed")
               }
 
+              onSuccess?.()
               router.push("/dashboard/billing?success=true")
               router.refresh()
               resolve()
@@ -131,14 +134,15 @@ export function RazorpayCheckoutButton({ planName, planLabel, highlight }: Props
   return (
     <div className="w-full space-y-1.5">
       <Button
+        size={size}
         className={`w-full ${highlight ? "bg-white text-blue-600 hover:bg-slate-100" : "bg-blue-600 hover:bg-blue-700 text-white"}`}
         onClick={handleClick}
         disabled={loading}
       >
         {loading ? (
-          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          <Loader2 className={`${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} animate-spin mr-2`} />
         ) : (
-          <Zap className="h-4 w-4 mr-2" />
+          <Zap className={`${size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} mr-2`} />
         )}
         Upgrade to {planLabel}
       </Button>

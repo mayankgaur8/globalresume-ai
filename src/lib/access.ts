@@ -1,5 +1,14 @@
 import prisma from "./prisma"
 
+// ── Admin bypass ───────────────────────────────────────────────────────────────
+// Emails listed here receive full ADMIN limits regardless of their DB role.
+// This lets the owner test every paid feature without a Razorpay payment.
+const ADMIN_EMAILS = new Set(["mayankgaur.8@gmail.com"])
+
+export function isAdminEmail(email: string | null | undefined): boolean {
+  return !!email && ADMIN_EMAILS.has(email)
+}
+
 // ── Plan feature matrix ────────────────────────────────────────────────────────
 
 export type PlanName = "FREE" | "BASIC" | "PRO" | "GLOBAL" | "ADMIN"
@@ -15,6 +24,8 @@ export interface PlanLimits {
   canExportDocx: boolean
   canUsePriorityExport: boolean
   canAccessAllTemplates: boolean
+  canUseATSChecker: boolean
+  canUseCoverLetterAI: boolean
 }
 
 const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
@@ -29,6 +40,8 @@ const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     canExportDocx: false,
     canUsePriorityExport: false,
     canAccessAllTemplates: false,
+    canUseATSChecker: false,
+    canUseCoverLetterAI: false,
   },
   BASIC: {
     plan: "BASIC",
@@ -41,6 +54,8 @@ const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     canExportDocx: false,
     canUsePriorityExport: false,
     canAccessAllTemplates: false,
+    canUseATSChecker: false,
+    canUseCoverLetterAI: false,
   },
   PRO: {
     plan: "PRO",
@@ -53,6 +68,8 @@ const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     canExportDocx: true,
     canUsePriorityExport: true,
     canAccessAllTemplates: false,
+    canUseATSChecker: true,
+    canUseCoverLetterAI: false,
   },
   GLOBAL: {
     plan: "GLOBAL",
@@ -65,6 +82,8 @@ const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     canExportDocx: true,
     canUsePriorityExport: true,
     canAccessAllTemplates: true,
+    canUseATSChecker: true,
+    canUseCoverLetterAI: true,
   },
   ADMIN: {
     plan: "ADMIN",
@@ -77,6 +96,8 @@ const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     canExportDocx: true,
     canUsePriorityExport: true,
     canAccessAllTemplates: true,
+    canUseATSChecker: true,
+    canUseCoverLetterAI: true,
   },
 }
 
@@ -86,13 +107,14 @@ export async function getUserPlanLimits(userId: string): Promise<PlanLimits> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
+      email: true,
       role: true,
       subscription: { include: { plan: true } },
     },
   })
 
   if (!user) return PLAN_LIMITS.FREE
-  if (user.role === "ADMIN") return PLAN_LIMITS.ADMIN
+  if (user.role === "ADMIN" || isAdminEmail(user.email)) return PLAN_LIMITS.ADMIN
 
   const planName = (user.subscription?.plan?.name as PlanName) ?? "FREE"
   return PLAN_LIMITS[planName] ?? PLAN_LIMITS.FREE
