@@ -21,6 +21,7 @@ type RegisterErrorCode =
   | "EMAIL_EXISTS"
   | "RATE_LIMITED"
   | "DATABASE_UNAVAILABLE"
+  | "DB_SCHEMA_MISSING"
   | "SERVER_ERROR"
 
 function errorResponse(message: string, status: number, code: RegisterErrorCode, headers?: HeadersInit) {
@@ -176,6 +177,15 @@ export async function POST(req: Request) {
 
     if (isPrismaKnownError(err) && err.code === "P2002") {
       return errorResponse("Email already exists", 409, "EMAIL_EXISTS")
+    }
+
+    // P2021 = table not found, P2022 = column not found — database not migrated
+    if (isPrismaKnownError(err) && (err.code === "P2021" || err.code === "P2022")) {
+      return errorResponse(
+        "Database not initialized. Please contact support.",
+        503,
+        "DB_SCHEMA_MISSING"
+      )
     }
 
     if (isTransientDbError(err)) {
